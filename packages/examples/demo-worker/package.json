@@ -1,0 +1,11 @@
+{
+  "name": "demo-worker",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/worker.ts"
+  },
+  "dependencies": {
+    "@job-inspector/sdk": "workspace:*" 
+  }
+}

@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum JobStatus{
+  FAILED
+  DEAD_LETTER
+  RESOLVED
+}
+
+model Job{
+  id String @id @default(uuid())
+  queueName String @map("queue_name")
+  externalJobId String @map("external_job_id")
+  status JobStatus @default(FAILED)
+
+  // Denormalize for filtering without joining all the attempts
+  lastErrorFingerprint String? @map("last_error_fingerprint")
+  totalAttempts Int @default(1) @map("total_attempts")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  attempts JobAttempts[]
+
+  @@unique([queueName,externalJobId])
+  @@index([queueName])
+  @@index([status])
+  @@index([lastErrorFingerprint])
+  @@map("jobs")
+
+}
+model JobAttempts{
+  id String @id @default(uuid()) 
+  jobId String @map("job_id")
+  attemptNumber Int @map("attempt_number")
+
+  // ERROR INFORMATION...
+  errorName String @map("error_name")
+  errorMessage String @map("error_message")
+  errorStack String? @map("error_stack")
+  errorFingerprint String @map("error_fingerprint")
+
+  // CONTEXT AND DIAGNOSTICS
+  payload Json? //JOB INPUT DATA 
+  breadcrumbs Json? // timestamps of https and db calls
+  duration Int?  @map("duration_ms")
+
+  // failed
+  failedAt DateTime @default(now()) @map("failed_at")
+
+  // relationship
+  job Job @relation(references: [id],fields: [jobId],onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([errorFingerprint])
+  @@index([failedAt])
+
+  @@map("job_attempts")
+}

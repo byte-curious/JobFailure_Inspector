@@ -5,5 +5,13 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.10.0",
+    "dotenv": "^18.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "prisma": "8.1.0-dev.9"
   }
 }

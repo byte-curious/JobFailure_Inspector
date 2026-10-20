@@ -6,7 +6,7 @@ import type { Job } from "bullmq";
 type JobHandler<T, R> = (job: Job<T>) => Promise<R>;
 
 type InspectorOptions = {
-    ingestionUrl: string;
+    ingestionUrl?: string;
     apiKey?: string;
 };
 
@@ -40,7 +40,7 @@ function serializationOfError(error: unknown): errorSerializer {
 
 export function wrapJob<T, R>(
     handler: JobHandler<T, R>,
-    options: InspectorOptions,
+    options?: InspectorOptions,
 ): JobHandler<T, R> {
     return async (job: Job<T>): Promise<R> => {
         // TODO 1: Record the start timestamp.
@@ -73,17 +73,23 @@ export function wrapJob<T, R>(
             // TODO 7: Send the failure event to your ingestion server.
             // IMPORTANT: Reporting failure must not hide the original error.
             const failureReport = {
-                queueName : metadata.queueName,
-                jobId : metadata.jobId,
+                queueName: metadata.queueName,
+                jobId: metadata.jobId,
                 attemptNumber: metadata.attemptNumber,
                 payload: metadata.payload,
-                error : serializedError,
+                error: serializedError,
                 durationMs: duration,
                 failedAt: new Date().toISOString()
             }
+            const ingestionUrl =
+                options?.ingestionUrl ||
+                process.env.INSPECTOR_INGESTION_URL ||
+                "http://localhost:3000/v1/events/failure";
+
             // Fail-safe dispatch
             try {
-                await fetch(options.ingestionUrl, {
+
+                await fetch(ingestionUrl, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -96,7 +102,7 @@ export function wrapJob<T, R>(
             } catch (telemetryError) {
                 // We warn the developer, but DO NOT prevent the original error from throwing
                 console.warn(
-                    `[JobInspector SDK] Failed to report job failure to ${options.ingestionUrl}:`,
+                    `[JobInspector SDK] Failed to report job failure to ${ingestionUrl}:`,
                     telemetryError instanceof Error ? telemetryError.message : telemetryError
                 );
             }

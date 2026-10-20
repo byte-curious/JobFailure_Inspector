@@ -1,0 +1,14 @@
+{
+  "name": "demo-worker",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "worker": "tsx watch src/worker.ts",
+    "produce": "tsx src/producer.ts"
+  },
+  "dependencies": {
+    "@job-inspector/sdk": "workspace:*",
+    "bullmq": "^5.81.5",
+    "dotenv": "^16.4.5"
+  }
+}

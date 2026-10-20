@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { prisma } from "../database/db.js";
 import type { FastifyPluginAsync } from "fastify";
 
-
 type ErrorPayload = {
     name: string;
     message: string;
@@ -18,7 +17,6 @@ type FailureReportBody = {
     error: ErrorPayload;
     failedAt?: string;
 };
-
 
 export async function recordFailure(report: FailureReportBody) {
     const { queueName, jobId, attemptNumber, payload, durationMs, error } = report;
@@ -54,14 +52,14 @@ export async function recordFailure(report: FailureReportBody) {
     // 2. Insert child attempt linked to job.id (UUID)
     const attempt = await prisma.jobAttempts.create({
         data: {
-            jobId: job.id, // Correct Foreign Key!
+            jobId: job.id,
             attemptNumber,
             errorName: error.name,
             errorMessage: error.message,
             errorStack: error.stack,
             errorFingerprint,
             payload: (payload as object) ?? {},
-            durationMs,
+            duration: durationMs,
             failedAt: report.failedAt ? new Date(report.failedAt) : new Date(),
         },
     });
@@ -69,31 +67,50 @@ export async function recordFailure(report: FailureReportBody) {
     return { job, attempt };
 }
 
-export const failureRoute: FastifyPluginAsync = async(fastify)=>{
-    fastify.post<{Body: FailureReportBody}>("/v1/events/failure",{
-        schema: {
-            body: {
-                type: "object",
-                required: ["queueName", "jobId", "attemptNumber", "durationMs", "error"],
+export const failureRoute: FastifyPluginAsync = async (fastify) => {
+    fastify.post<{ Body: FailureReportBody }>(
+        "/v1/events/failure",
+        {
+            schema: {
+                body: {
+                    type: "object",
+                    required: ["queueName", "jobId", "attemptNumber", "durationMs", "error"],
+                    properties: {
+                        queueName: { type: "string" },
+                        jobId: { type: "string" },
+                        attemptNumber: { type: "integer" },
+                        durationMs: { type: "number" },
+                        payload: { type: "object" },
+                        error: {
+                            type: "object",
+                            required: ["name", "message"],
+                            properties: {
+                                name: { type: "string" },
+                                message: { type: "string" },
+                                stack: { type: "string" },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        async (request, reply) => {
+            try {
+                const result = await recordFailure(request.body);
 
-            }
-        }
-    }, async(request, reply)=>{
-        try {
-            const result = await recordFailure(request.body);
-
-            return reply.code(201).send({
-                received: true,
-                jobId: result.job.id,
-                attemptId: result.attempt.id
-            })
-        } catch (error) {
-            fastify.log.error({ err: error }, "Failed to record failure");
+                return reply.code(201).send({
+                    received: true,
+                    jobId: result.job.id,
+                    attemptId: result.attempt.id,
+                });
+            } catch (error) {
+                fastify.log.error({ err: error }, "Failed to record failure");
 
                 return reply.code(500).send({
                     error: "INTERNAL_SERVER_ERROR",
                     message: "Failed to record failure report",
                 });
+            }
         }
-    })  
-}
+    );
+};

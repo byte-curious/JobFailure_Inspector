@@ -15,6 +15,7 @@ type FailureReportBody = {
     payload?: unknown;
     durationMs: number;
     error: ErrorPayload;
+    breadcrumbs?: unknown[];
     failedAt?: string;
 };
 
@@ -60,6 +61,7 @@ export async function recordFailure(report: FailureReportBody) {
             errorFingerprint,
             payload: (payload as object) ?? {},
             duration: durationMs,
+            breadcrumbs: (report.breadcrumbs as object )?? [],
             failedAt: report.failedAt ? new Date(report.failedAt) : new Date(),
         },
     });

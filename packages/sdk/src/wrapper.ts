@@ -3,6 +3,8 @@ import { RingBuffer } from "./ring-buffer.js";
 import { executionContext } from "./context.js";
 import type { Breadcrumb, JobContext } from "./context.js";
 import { enableHttpInterception } from "./interceptor/http.js";
+import { sanitize } from "./sanitizer.js";
+
 
 // Auto-enable HTTP interception once when SDK is imported
 enableHttpInterception();
@@ -86,10 +88,10 @@ export function wrapJob<T, R>(
                 queueName: metadata.queueName,
                 jobId: metadata.jobId,
                 attemptNumber: metadata.attemptNumber,
-                payload: metadata.payload,
+                payload: sanitize(metadata.payload),
                 error: serializedError,
                 durationMs: duration,
-                breadcrumbs: breadcrumbs.toArray(),  
+                breadcrumbs: sanitize(breadcrumbs.toArray()),  
                 failedAt: new Date().toISOString(),
             };
 

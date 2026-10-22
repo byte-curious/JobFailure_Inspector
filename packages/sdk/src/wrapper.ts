@@ -20,14 +20,19 @@ type ErrorSerializer = {
     name: string;
     message: string;
     stack?: string;
+    code?: string;
 };
 
 function serializationOfError(error: unknown): ErrorSerializer {
     if (error instanceof Error) {
+        const rawErrorcode = (error as {code? : unknown}).code;
+        const errorCode = (typeof rawErrorcode == "string" || typeof rawErrorcode == "number")? String(rawErrorcode): undefined;
+
         return {
             name: error.name,
             message: error.message,
             stack: error.stack,
+            code: errorCode
         };
     }
 
@@ -92,6 +97,7 @@ export function wrapJob<T, R>(
                 error: serializedError,
                 durationMs: duration,
                 breadcrumbs: sanitize(breadcrumbs.toArray()),  
+                droppedBreadcrumbs: breadcrumbs.droppedCount ,
                 failedAt: new Date().toISOString(),
             };
 

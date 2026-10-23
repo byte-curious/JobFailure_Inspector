@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "tsx --test test/normalize.test.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

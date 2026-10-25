@@ -64,7 +64,7 @@ model JobAttempts {
 
   // making jobId and attemptNumbers unique as if network jitter and send the same error job twice it don't log twice
   @@unique([jobId, attemptNumber])
-  
+  @@index([jobId, attemptNumber])
   @@index([jobId])
   @@index([failedAt])
   @@index([errorFingerprint, failedAt])

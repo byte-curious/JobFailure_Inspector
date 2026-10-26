@@ -4,6 +4,7 @@ import { eventBus } from "../utils/event-bus.js";
 import { prisma } from "../database/db.js";
 import type { JobStatus } from "../generated/prisma/enums.js";
 import { computeExecutionDiff } from "../services/diff.js";
+import { Prisma } from "../generated/prisma/client.js";
 
 type JobsQuery = {
     queue?: string;
@@ -130,14 +131,14 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
         const classification = latestAttempt
             ? await classifyAttempt(
-                  {
-                      jobId: job.id,
-                      attemptNumber: latestAttempt.attemptNumber,
-                      errorFingerprint: latestAttempt.errorFingerprint,
-                      failedAt: latestAttempt.failedAt,
-                  },
-                  job.queueName
-              )
+                {
+                    jobId: job.id,
+                    attemptNumber: latestAttempt.attemptNumber,
+                    errorFingerprint: latestAttempt.errorFingerprint,
+                    failedAt: latestAttempt.failedAt,
+                },
+                job.queueName
+            )
             : null;
 
         return reply.send({
@@ -164,7 +165,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         const origin = process.env.CORS_ORIGIN || "*";
         reply.raw.writeHead(200, {
             "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",  
+            "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": origin,
         });
@@ -203,5 +204,49 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         request.raw.on("close", cleanup);
+    });
+    
+    // 4. GET /v1/system/health (Per-Queue Stats & 3-Tier Storage Breakdown)
+    fastify.get("/v1/system/health", async (request, reply) => {
+        const now = Date.now();
+        const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+        const [queues, totalJobs, hotCount, warmCount] = await Promise.all([
+            prisma.job.groupBy({
+                by: ["queueName"],
+                _count: { id: true },
+            }),
+            prisma.job.count(),
+            prisma.jobAttempts.count({
+                where: { failedAt: { gte: sevenDaysAgo } },
+            }),
+            prisma.jobAttempts.count({
+                where: {
+                    failedAt: { lt: sevenDaysAgo, gte: thirtyDaysAgo },
+                    payload: {equals: Prisma.DbNull},  
+                },
+            }),
+        ]);
+
+        return reply.send({
+            totalQueues: queues.length,
+            totalJobs,
+            storageTiers: {
+                hotTierCount: hotCount,
+                warmTierCount: warmCount,
+            },
+            queues: queues.map((q) => ({
+                name: q.queueName,
+                failedJobsCount: q._count.id,
+            })),
+        });
+    });
+
+    // 5. POST /v1/system/retention-sweep (Trigger Manual Storage Sweep)
+    fastify.post("/v1/system/retention-sweep", async (request, reply) => {
+        const { runRetentionSweep } = await import("../services/retention.js");
+        const result = await runRetentionSweep(7, 30, 500);
+        return reply.send({ success: true, result });
     });
 };

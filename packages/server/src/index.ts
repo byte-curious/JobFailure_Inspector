@@ -1,12 +1,13 @@
 import Fastify from "fastify"
 import { failureRoute } from "./routes/failures.js";
-
+import { inspectorRoutes } from "./routes/inspector.js";
 
 const fastify = Fastify({
     logger: true
 });
 
 fastify.register(failureRoute);
+fastify.register(inspectorRoutes);
 
 async function main() {
     try {

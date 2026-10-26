@@ -1,6 +1,8 @@
 import { prisma } from "../database/db.js";
 import type { FastifyPluginAsync } from "fastify";
 import { generateErrorFingerprint } from "../utils/normalize.js";
+import { eventBus } from "../utils/event-bus.js";
+
 
 type ErrorPayload = {
     name: string;
@@ -151,7 +153,18 @@ export const failureRoute: FastifyPluginAsync = async (fastify) => {
             try {
                 const result = await recordFailure(request.body);
                 const statusCode = result.isDuplicate ? 200 : 201;
-
+                // broadcast live failure event if result is not dublicate
+                if(!result.isDuplicate){
+                    eventBus.emitNewFailure({
+                        jobId: result.job.id,
+                        externalJobId: result.job.externalJobId,
+                        queueName: result.job.queueName,
+                        attemptNumber: result.attempt.attemptNumber,
+                        errorName: result.attempt.errorName,
+                        errorMessage: result.attempt.errorMessage,
+                        failedAt: result.attempt.failedAt.toISOString()
+                    })
+                }
                 return reply.code(statusCode).send({
                     received: true,
                     duplicate: result.isDuplicate,

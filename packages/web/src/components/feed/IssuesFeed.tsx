@@ -90,6 +90,9 @@ export const IssuesFeed: React.FC<IssuesFeedProps> = ({ onSelectJob }) => {
                     <p className="text-xs font-mono mt-0.5" style={{ color: "var(--text-muted)" }}>
                         Real-time background worker failures and dead-letter queues
                     </p>
+                    <div className="text-[11px] font-mono mt-1" style={{ color: "var(--text-faint)" }}>
+                        {totalCount > 0 ? `Showing ${jobs.length} of ${totalCount} issues` : "Loading issues..."}
+                    </div>
                 </div>
 
                 {/* Filter Controls */}

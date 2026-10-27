@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Navigation, type PageId } from "./components/Navigation";
 import { TopBar } from "./components/TopBar";
 import { ToastProvider } from "./components/Toast";

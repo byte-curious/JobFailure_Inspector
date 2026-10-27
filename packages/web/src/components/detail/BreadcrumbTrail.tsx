@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { Breadcrumb } from "../../api/types";
-import { ChevronDown, ChevronRight, Globe, Layers, AlertCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, Layers } from "lucide-react";
 
 export const BreadcrumbTrail: React.FC<{
     breadcrumbs?: Breadcrumb[];
@@ -143,7 +143,7 @@ export const BreadcrumbTrail: React.FC<{
                                                 color: isFatal ? "#f43f5e" : "var(--text-faint)",
                                             }}
                                         >
-                                            {b.data.durationMs} ms
+                                            {Number(b.data.durationMs)} ms
                                         </span>
                                     ) : (
                                         <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>

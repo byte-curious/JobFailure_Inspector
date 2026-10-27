@@ -3,8 +3,12 @@ import { Database, Flame, Archive, Trash2, RefreshCw, Layers, BarChart2 } from "
 import { fetchSystemHealth, triggerRetentionSweep, type SystemHealthResponse } from "../../api/client";
 import { useToast } from "../Toast";
 
+type QueueHealthData = SystemHealthResponse & {
+    hourlySpikes?: Array<{ count: number; hour: string }>;
+};
+
 export const QueueHealth: React.FC = () => {
-    const [health, setHealth] = useState<SystemHealthResponse | null>(null);
+    const [health, setHealth] = useState<QueueHealthData | null>(null);
     const [loading, setLoading] = useState(true);
     const [sweeping, setSweeping] = useState(false);
     const { showToast } = useToast();
@@ -31,7 +35,7 @@ export const QueueHealth: React.FC = () => {
             const res = await triggerRetentionSweep();
             showToast(`Retention Sweep Complete: ${res.result.warmStrippedCount} stripped, ${res.result.coldDeletedAttempts} deleted`);
             loadData();
-        } catch (err) {
+        } catch {
             showToast("Failed to run retention sweep");
         } finally {
             setSweeping(false);

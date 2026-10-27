@@ -1,0 +1,34 @@
+FROM node:24.22.1 AS base
+
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# copy root config and manifests
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/server/package.json ./packages/server/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/web/packages.json ./packages/web/
+
+# insall all dependecies
+RUN pnpm insall --frozen-lockfile
+
+# copy sorce code
+COPY packages/ ./packages/
+
+# generate the prisma client and build all packages
+RUN pnpm --filter @job-inspector/server exec prisma generate
+RUN pnpm --filter @job-inspector/sdk build
+RUN pnpm --filter @job-inspector/cli build
+RUN pnpm --filter @job-inspector/server build
+RUN pnpm --filter @job-inspector/web build
+
+# set environment variables
+ENV NODE_ENV=production
+ENV port=3000
+ENV host='0.0.0.0'
+
+EXPOSE 3000
+
+CMD ["pnpm", "--filter", "@job-inspector/server", "dev"]

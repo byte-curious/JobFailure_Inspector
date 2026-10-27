@@ -205,14 +205,15 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
         request.raw.on("close", cleanup);
     });
-    
+
     // 4. GET /v1/system/health (Per-Queue Stats & 3-Tier Storage Breakdown)
     fastify.get("/v1/system/health", async (request, reply) => {
         const now = Date.now();
         const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
         const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+        const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
 
-        const [queues, totalJobs, hotCount, warmCount] = await Promise.all([
+        const [queues, totalJobs, hotCount, warmCount, hourlyBuckets] = await Promise.all([
             prisma.job.groupBy({
                 by: ["queueName"],
                 _count: { id: true },
@@ -224,9 +225,17 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             prisma.jobAttempts.count({
                 where: {
                     failedAt: { lt: sevenDaysAgo, gte: thirtyDaysAgo },
-                    payload: {equals: Prisma.DbNull},  
+                    payload: {equals: Prisma.DbNull},
                 },
             }),
+            // REAL 24-HOUR HISTOGRAM (Grouped by hour from PostgreSQL)
+            prisma.$queryRaw<Array<{ hour: string; count: bigint }>>`
+                SELECT to_char(date_trunc('hour', failed_at), 'HH24:00') as hour, count(*)::int as count
+                FROM job_attempts
+                WHERE failed_at >= ${twentyFourHoursAgo}
+                GROUP BY 1
+                ORDER BY 1 ASC
+            `,
         ]);
 
         return reply.send({
@@ -239,6 +248,10 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             queues: queues.map((q) => ({
                 name: q.queueName,
                 failedJobsCount: q._count.id,
+            })),
+            hourlySpikes: hourlyBuckets.map((b) => ({
+                hour: b.hour,
+                count: Number(b.count),
             })),
         });
     });

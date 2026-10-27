@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* =============================================================================
+   1. BASE TYPOGRAPHY (Workhorse & High-Contrast)
+   ============================================================================= */
+html,
+body,
+#root {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.012em;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Technical Monospace for IDs, Timestamps, and Payloads */
+.font-mono {
+  font-family: 'Geist Mono', monospace;
+  letter-spacing: -0.01em;
+}
+
+/* Tasteful Editorial Accent for Brand & Section Highlights */
+.font-editorial {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-style: italic;
+  letter-spacing: -0.005em;
+}
+
+/* =============================================================================
+   2. POLISHED SURFACES (Glassmorphism & Depth)
+   ============================================================================= */
+/* Standard Card with Subtle Elevation */
+.glass-panel {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Hover State for Clickable Rows */
+.glass-panel-hover:hover {
+  background-color: var(--surface-hover);
+  border-color: rgba(127, 75, 245, 0.35);
+}
+
+/* Floating Action Bars (Linear Style) */
+.glass-floating {
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.35), 0 8px 10px -6px rgba(0, 0, 0, 0.35);
+}
+
+/* Subtle Gradient Glow for Cards */
+.subtle-glow {
+  position: relative;
+}
+
+.subtle-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(to bottom right, rgba(127, 75, 245, 0.3), transparent 60%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* =============================================================================
+   3. CUSTOM SCROLLBAR (Minimalist)
+   ============================================================================= */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}

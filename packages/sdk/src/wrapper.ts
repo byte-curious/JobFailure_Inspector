@@ -25,8 +25,8 @@ type ErrorSerializer = {
 
 function serializationOfError(error: unknown): ErrorSerializer {
     if (error instanceof Error) {
-        const rawErrorcode = (error as {code? : unknown}).code;
-        const errorCode = (typeof rawErrorcode == "string" || typeof rawErrorcode == "number")? String(rawErrorcode): undefined;
+        const rawErrorcode = (error as { code?: unknown }).code;
+        const errorCode = (typeof rawErrorcode == "string" || typeof rawErrorcode == "number") ? String(rawErrorcode) : undefined;
 
         return {
             name: error.name,
@@ -87,6 +87,14 @@ export function wrapJob<T, R>(
         } catch (error: unknown) {
             const duration = Date.now() - timer;
             const serializedError = serializationOfError(error);
+            //  Calculate BullMQ retry budget & unrecoverable error status
+            const maxAttempts = typeof job.opts.attempts == "number" ? job.opts.attempts : 1;
+            // server need to know the total allowed try budget
+            const currentAttempt = job.attemptsMade + 1;
+            // bullmq allows jobs to throw unrecoverable error to fail immediately without retrying
+            const isUnrecoverable = error instanceof Error && (error.name === "UnrecoverableError" || (error as any).unrecoverable === true);
+
+            const isFinalAttempt = isUnrecoverable || currentAttempt >= maxAttempts;
 
             // 4. Dump the breadcrumbs recorded in chronological order
             const failureReport = {
@@ -96,8 +104,10 @@ export function wrapJob<T, R>(
                 payload: sanitize(metadata.payload),
                 error: serializedError,
                 durationMs: duration,
-                breadcrumbs: sanitize(breadcrumbs.toArray()),  
-                droppedBreadcrumbs: breadcrumbs.droppedCount ,
+                maxAttempts,
+                isFinalAttempt,
+                breadcrumbs: sanitize(breadcrumbs.toArray()),
+                droppedBreadcrumbs: breadcrumbs.droppedCount,
                 failedAt: new Date().toISOString(),
             };
 
@@ -113,6 +123,7 @@ export function wrapJob<T, R>(
                     signal: AbortSignal.timeout(3000),
                 });
             } catch (telemetryError) {
+
                 console.warn(
                     `[JobInspector SDK] Failed to report job failure to ${ingestionUrl}:`,
                     telemetryError instanceof Error ? telemetryError.message : telemetryError

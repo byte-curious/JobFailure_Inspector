@@ -18,6 +18,28 @@ enum JobStatus {
   RESOLVED
 }
 
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  SUPPRESSED
+  DEAD
+}
+
+enum AlertKind {
+  OPENED
+  REGRESSION
+  ESCALATED_SHARED
+  DEAD_LETTER_DIGEST
+  RECOVERED
+  RATE_CAP_SUMMARY
+}
+
 model Job {
   id            String    @id @default(uuid())
   queueName     String    @map("queue_name")
@@ -50,11 +72,15 @@ model JobAttempts {
   errorMessage       String  @map("error_message")
   errorStack         String? @map("error_stack")
   errorFingerprint   String  @map("error_fingerprint")
-  droppedBreadcrumbs Int? @map("dropped_breadcrumbs")
+  droppedBreadcrumbs Int?    @map("dropped_breadcrumbs")
   // CONTEXT AND DIAGNOSTICS
   payload            Json? //JOB INPUT DATA 
   breadcrumbs        Json? // timestamps of https and db calls
   duration           Int?    @map("duration_ms")
+
+  // RETRY & FINALITY  
+  isfinalAttempt Boolean? @map("is_final_attempt")
+  maxAttempts    Int?     @map("max_attempts")
 
   // failed
   failedAt DateTime @default(now()) @map("failed_at") @db.Timestamptz
@@ -69,4 +95,67 @@ model JobAttempts {
   @@index([failedAt])
   @@index([errorFingerprint, failedAt])
   @@map("job_attempts")
+}
+
+model Incident {
+  id               String         @id @default(uuid())
+  queueName        String         @map("queue_name")
+  errorFingerprint String         @map("error_fingerprint")
+  status           IncidentStatus @default(OPEN)
+
+  epoch            Int @default(1)
+  lastDecidedEpoch Int @default(0) @map("last_decided_epoch")
+  lastSentEpoch    Int @default(0) @map("last_sent_epoch")
+
+  digestSeq        Int       @default(0) @map("digest_seq")
+  digestFinalCount Int       @default(0) @map("digest_final_count")
+  lastDigestAt     DateTime? @map("last_digest_at") @db.Timestamptz
+
+  eventCount        Int @default(1) @map("event_count")
+  finalFailureCount Int @default(0) @map("final_failure_count")
+
+  firstSeenAt DateTime @default(now()) @map("first_seen_at") @db.Timestamptz
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz
+
+  jobs       IncidentJob[]
+  deliveries AlertDelivery[]
+
+  @@unique([queueName, errorFingerprint])
+  @@index([status, lastSeenAt])
+  @@map("incidents")
+}
+
+model IncidentJob {
+  incidentId String   @map("incident_id")
+  jobId      String   @map("job_id")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@id([incidentId, jobId])
+  @@index([incidentId, lastSeenAt])
+  @@map("incident_jobs")
+}
+
+model AlertDelivery {
+  id            String         @id @default(uuid())
+  incidentId    String?        @map("incident_id") // Optional for global rate cap summary!
+  epoch         Int            @default(0)
+  dedupeKey     String         @unique @map("dedupe_key")
+  kind          AlertKind
+  payload       Json
+  status        DeliveryStatus @default(PENDING)
+  attempts      Int            @default(0)
+  lockToken     String?        @map("lock_token")
+  lockedUntil   DateTime?      @map("locked_until") @db.Timestamptz
+  nextAttemptAt DateTime       @default(now()) @map("next_attempt_at") @db.Timestamptz
+  lastError     String?        @map("last_error")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  sentAt        DateTime?      @map("sent_at") @db.Timestamptz
+
+  incident Incident? @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt, status])
+  @@map("alert_deliveries")
 }

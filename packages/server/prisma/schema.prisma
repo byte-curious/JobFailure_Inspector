@@ -79,7 +79,7 @@ model JobAttempts {
   duration           Int?    @map("duration_ms")
 
   // RETRY & FINALITY  
-  isfinalAttempt Boolean? @map("is_final_attempt")
+  isFinalAttempt Boolean? @map("is_final_attempt")
   maxAttempts    Int?     @map("max_attempts")
 
   // failed
@@ -107,12 +107,15 @@ model Incident {
   lastDecidedEpoch Int @default(0) @map("last_decided_epoch")
   lastSentEpoch    Int @default(0) @map("last_sent_epoch")
 
-  digestSeq        Int       @default(0) @map("digest_seq")
-  digestFinalCount Int       @default(0) @map("digest_final_count")
-  lastDigestAt     DateTime? @map("last_digest_at") @db.Timestamptz
+  digestSeq         Int        @default(0) @map("digest_seq")
+  digestFinalCount  Int        @default(0) @map("digest_final_count")
+  lastDigestAt      DateTime?  @map("last_digest_at") @db.Timestamptz
+  
+  lastAlertKind     AlertKind? @map("last_alert_kind")
+  mutedUntil        DateTime?  @map("muted_until") @db.Timestamptz
 
-  eventCount        Int @default(1) @map("event_count")
-  finalFailureCount Int @default(0) @map("final_failure_count")
+  eventCount        Int        @default(1) @map("event_count")
+  finalFailureCount Int        @default(0) @map("final_failure_count")
 
   firstSeenAt DateTime @default(now()) @map("first_seen_at") @db.Timestamptz
   lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz

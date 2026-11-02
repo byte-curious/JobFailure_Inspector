@@ -1,4 +1,10 @@
-export type AlertKind =| "OPENED"| "REGRESSION" | "ESCALATED_SHARED"| "DEAD_LETTER_DIGEST"| "RECOVERED" | "RATE_CAP_SUMMARY";
+export type AlertKind =
+    | "OPENED"
+    | "REGRESSION"
+    | "ESCALATED_SHARED"
+    | "DEAD_LETTER_DIGEST"
+    | "RECOVERED"
+    | "RATE_CAP_SUMMARY";
 
 export type IncidentStateForAlert = {
     id: string;
@@ -9,6 +15,7 @@ export type IncidentStateForAlert = {
     digestSeq: number;
     digestFinalCount: number;
     finalFailureCount: number;
+    eventCount: number;
     mutedUntil: Date | null;
 };
 
@@ -40,24 +47,26 @@ export function decideAlert(params: {
     } = params;
 
     // RULE 1: Mute Guard
+    // If an on-call engineer snoozed/muted this incident, stay 100% silent
     if (incident.mutedUntil && incident.mutedUntil > now) {
         return null;
     }
 
-    // Helper for global rate-cap summary key
     const hourBucket = now.toISOString().slice(0, 13); // e.g. "2026-03-01T14"
     const isRateCapped = alertsInLastHour >= rateCapPerHour;
 
-    // RULE 2: Outage Escalation (ALWAYS cuts through rate caps!)
+    // RULE 2: Outage Escalation (Google SRE principle: Outages ALWAYS cut through rate limits!)
+    // If 3+ distinct jobs in this queue crashed in the last 5 minutes, alert immediately!
     if (distinctJobsInWindow >= threshold && incident.lastAlertKind !== "ESCALATED_SHARED") {
         return {
             kind: "ESCALATED_SHARED",
             dedupeKey: `${incident.id}:${incident.epoch}:ESCALATED_SHARED`,
-            reason: `Distinct jobs in 5-minute window (${distinctJobsInWindow}) met threshold (${threshold})`,
+            reason: `Shared Outage: ${distinctJobsInWindow} distinct jobs failed in the last 5 minutes`,
         };
     }
 
-    // RULE 3: Global Rate Cap Backstop for non-outage alerts
+    // RULE 3: Global Rate Cap Backstop
+    // If more than 20 alerts fired in the last hour, suppress individual alerts to prevent channel flooding
     if (isRateCapped) {
         return {
             kind: "RATE_CAP_SUMMARY",
@@ -66,34 +75,40 @@ export function decideAlert(params: {
         };
     }
 
-    // RULE 4: Regression (Was resolved in earlier epoch, resumed failing)
+    // RULE 4: Regression
+    // If an incident was previously marked RESOLVED and errors start happening again, alert immediately
     if (!isNew && incident.epoch > incident.lastDecidedEpoch) {
         return {
             kind: "REGRESSION",
             dedupeKey: `${incident.id}:${incident.epoch}:REGRESSION`,
-            reason: `Incident was resolved, but failures resumed (epoch bumped to ${incident.epoch})`,
+            reason: `Regression: Failures resumed after resolution (epoch bumped to ${incident.epoch})`,
         };
     }
 
-    // RULE 5: Brand New Incident (First occurrence)
-    if (isNew || incident.lastDecidedEpoch === 0) {
-        return {
-            kind: "OPENED",
-            dedupeKey: `${incident.id}:${incident.epoch}:OPENED`,
-            reason: `New unseen error fingerprint in queue`,
-        };
-    }
-
-    // RULE 6: Dead-Letter Digest
+    // RULE 5: Dead-Letter Failure
+    // If a job permanently exhausted all of its retries, alert so developers know customer data is stuck
     if (isFinalAttempt && incident.finalFailureCount > incident.digestFinalCount) {
         const nextSeq = incident.digestSeq + 1;
         return {
             kind: "DEAD_LETTER_DIGEST",
             dedupeKey: `${incident.id}:${incident.epoch}:DIGEST:${nextSeq}`,
-            reason: `Final failure count increased to ${incident.finalFailureCount}`,
+            reason: `Job permanently dead-lettered (final failure count: ${incident.finalFailureCount})`,
         };
     }
 
-    // Default: stay silent
+    // RULE 6: Calm Alerting for New Errors
+    // The Core Industry Standard:
+    // If this is a 1-time transient failure on Attempt 1 with retries remaining, STAY SILENT!
+    // BullMQ will retry it. If it succeeds, we avoided waking someone up for nothing.
+    // We only alert 'OPENED' if the error proves to be persistent (failed 2+ times) or had retries exhausted.
+    if ((isNew || incident.lastDecidedEpoch === 0) && (incident.eventCount >= 2 || isFinalAttempt)) {
+        return {
+            kind: "OPENED",
+            dedupeKey: `${incident.id}:${incident.epoch}:OPENED`,
+            reason: `New error fingerprint confirmed across multiple failures in queue`,
+        };
+    }
+
+    // Default: stay silent and let BullMQ automatic retries do their job
     return null;
 }

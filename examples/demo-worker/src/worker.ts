@@ -3,38 +3,38 @@ import { redisConfig } from "./config/redis.js";
 import { wrapJob, inspector } from "@job-inspector/sdk";
 import type { Job } from "bullmq";
 
-console.log("⚡ Starting Chaos Worker...");
+console.log("⚡ Starting Worker and connecting to Redis...");
 
 const worker = new Worker(
     "invoice",
     wrapJob(async (job: Job) => {
-        console.log(`👉 [Worker] Processing Chaos Job ID: ${job.id}`);
+        console.log(`\n👉 [Worker] Processing Invoice Job ID: ${job.id}`);
+        console.log("Job Payload:", JSON.stringify(job.data, null, 2));
 
-        // 1. STRESS TEST: Push 65 checkpoints into a 50-item buffer
-        // The first 15 (Step 0 to 14) MUST be dropped from memory!
-        console.log("Pushing 65 checkpoints to test RingBuffer overflow...");
-        for (let i = 0; i < 65; i++) {
-            inspector.checkpoint(`Step ${i}: Processing batch item ${i}`);
-        }
+        // 1. Manual Checkpoints
+        inspector.checkpoint("Step 1: Starting customer validation");
+        inspector.checkpoint("Step 2: Checking billing account status");
 
-        // 2. STRESS TEST: Test circular reference in breadcrumb metadata
-        console.log("Testing circular reference in breadcrumb...");
-        const circularObj: any = { info: "Transaction state" };
-        circularObj.self = circularObj; // Circular loop!
-        inspector.checkpoint("Checkpoint with circular metadata", circularObj);
+        // 2. Simulated outgoing external HTTP call (Zero-code auto-interception!)
+        console.log("Making external API call to check service status...");
+        await fetch("https://jsonplaceholder.typicode.com/todos/1");
 
-        // 3. STRESS TEST: External HTTP 404 Not Found
-        console.log("Making external HTTP call that returns 404...");
-        const res = await fetch("https://jsonplaceholder.typicode.com/posts/999999999");
-        console.log("HTTP Status returned:", res.status);
-
-        // 4. FATAL CRASH: Simulate unexpected failure
-        throw new Error("Chaos Gauntlet Intended Crash: Database deadlocked on transaction commit");
+        // 3. INTENTIONAL CRASH: A brand-new fatal error to trigger a new incident!
+        console.log("Simulating fatal crash...");
+        throw new Error("Stripe Fatal: API key has expired or was revoked (HTTP 401 Unauthorized)");
     }),
     { connection: redisConfig }
 );
 
-worker.on("ready", () => console.log("✅ Chaos Worker connected to Redis!"));
+// Worker Lifecycle Listeners
+worker.on("ready", () => {
+    console.log("✅ Worker connected to Redis and waiting for jobs on queue 'invoice'!");
+});
+
+worker.on("error", (err) => {
+    console.error("❌ Worker Redis error:", err.message);
+});
+
 worker.on("failed", (job, err) => {
-    console.log(`⚠️ Expected Job Failure: ${err.message}`);
+    console.log(`⚠️ Job ${job?.id} failed as expected: ${err.message}`);
 });

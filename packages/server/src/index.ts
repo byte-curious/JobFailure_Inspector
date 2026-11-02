@@ -1,3 +1,5 @@
+import "dotenv/config.js";
+
 import Fastify from "fastify"
 import { failureRoute } from "./routes/failures.js";
 import { inspectorRoutes } from "./routes/inspector.js";
@@ -5,7 +7,7 @@ import fastifyStatic from "@fastify/static";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
-
+import { startOutboxWorker, stopOutboxWorker } from "./services/outbox.js";
 
 // now making fastify serve for both API as well as react dashboard
 // resolve cors error by serving statically
@@ -19,21 +21,22 @@ const fastify = Fastify({
     logger: true
 });
 
+
 fastify.register(failureRoute);
 fastify.register(inspectorRoutes);
 
 // Serve Web Dashboard static assets(if build)
 const webDistPath = path.resolve(__dirname, "../../web/dist");
 
-if(fs.existsSync(webDistPath)){
+if (fs.existsSync(webDistPath)) {
     fastify.register(fastifyStatic, {
         root: webDistPath,
         prefix: '/',
     });
 
     // SPA fallback: Any non api route return index.html
-    fastify.setNotFoundHandler((request,reply)=>{
-        if(request.raw.url && request.raw.url.startsWith("/v1")){
+    fastify.setNotFoundHandler((request, reply) => {
+        if (request.raw.url && request.raw.url.startsWith("/v1")) {
             return reply.code(404).send({
                 error: "NOT_FOUND",
                 message: `Route ${request.raw.method}:${request.raw.url} not found`
@@ -42,7 +45,7 @@ if(fs.existsSync(webDistPath)){
         return reply.sendFile('index.html')
     })
 }
-else{
+else {
     fastify.log.warn(`Web frontend not built at ${webDistPath}. Serving API only.`)
 }
 
@@ -51,6 +54,16 @@ async function main() {
         const portNumber = Number(process.env.PORT) || 3000;
         const host = process.env.HOST || "0.0.0.0";
 
+        startOutboxWorker();
+        // Graceful shutdown
+        process.on("SIGTERM", () => {
+            stopOutboxWorker();
+            process.exit(0);
+        });
+        process.on("SIGINT", () => {
+            stopOutboxWorker();
+            process.exit(0);
+        });
         await fastify.listen({
             port: portNumber,
             host: host

@@ -3,31 +3,33 @@ import { redisConfig } from "./config/redis.js";
 
 const invoiceQueue = new Queue("invoice", { connection: redisConfig });
 
-async function runChaosProducer() {
-    console.log("⚡ [Chaos Producer] Queuing stress-test job...");
+async function addFailingJob() {
+    console.log("⚡ [Producer] Queuing test job to Redis...");
 
     const job = await invoiceQueue.add(
-        "chaos-stress-test",
+        "generate-invoice",
         {
-            orderId: "ord_chaos_777",
-            customerEmail: "alice@example.com", // Legitimate data (must NOT be redacted)
-
-            // Sensitive keys (must be redacted)
-            userPassword: "PlaintextPassword999!",
+            invoiceId: "inv_fresh_999",
+            customerEmail: "developer@example.com",
+            // Sensitive fields that our SDK will automatically redact:
             apiKey: "sk_live_verySecretKey1234567890",
+            userPassword: "MyPlaintextPassword!",
             billing: {
                 creditCard: "4111-2222-3333-4444",
-                securityCode: "123",
+                securityCode: "999",
             },
-
-            // Innocent key containing unlabeled Bearer token
-            authorizationHeader: "Bearer eyJhbGciOiJIUzI1NiJ9.e30.dummySignature",
         },
-        { attempts: 1 }
+        {
+            // Retries configuration:
+            attempts: 1, // Final attempt immediately!
+        }
     );
 
-    console.log(`✅ [Chaos Producer] Job queued successfully with ID: ${job.id}`);
+    console.log(`✅ [Producer] Job successfully enqueued with ID: ${job.id}`);
     await invoiceQueue.close();
 }
 
-runChaosProducer().catch(console.error);
+addFailingJob().catch((err) => {
+    console.error("❌ Failed to enqueue job:", err);
+    process.exit(1);
+});

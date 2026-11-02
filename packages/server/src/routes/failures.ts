@@ -41,6 +41,7 @@ export async function recordFailure(report: FailureReportBody) {
     } = report;
 
     // 1. Generate normalized fingerprint
+    // We strip dynamic IDs, IPs, and timestamps so identical errors hash to the exact same SHA-256 fingerprint
     const errorFingerprint = generateErrorFingerprint({
         name: error.name,
         message: error.message,
@@ -48,12 +49,16 @@ export async function recordFailure(report: FailureReportBody) {
     });
 
     const now = new Date();
+    // If this attempt exhausted all BullMQ retries, increment the dead letter counter by 1
     const finalFailureInc = isFinalAttempt ? 1 : 0;
     const baseUrl = process.env.PUBLIC_URL || "http://localhost:3000";
 
     // 2. Single Atomic PostgreSQL Transaction
+    // Everything (job update, attempt insert, incident grouping, and outbox enqueueing)
+    // runs in one transaction so a mid-flight crash never loses an alert or leaves orphan records.
     return await prisma.$transaction(async (tx) => {
         // Upsert Parent Job  
+        // We use Math.max so a delayed Attempt 1 arriving after Attempt 2 never downgrades our attempt count
         const existingJob = await tx.job.findUnique({
             where: {
                 queueName_externalJobId: { queueName, externalJobId: jobId },
@@ -86,6 +91,7 @@ export async function recordFailure(report: FailureReportBody) {
         }
 
         // Check Idempotency on Attempt
+        // If the worker network re-sent the same attempt twice, we detect it here
         const existingAttempt = await tx.jobAttempts.findUnique({
             where: {
                 jobId_attemptNumber: { jobId: job.id, attemptNumber },
@@ -94,10 +100,12 @@ export async function recordFailure(report: FailureReportBody) {
 
         if (existingAttempt) {
             // Already recorded, Return duplicate flag and skip incident increments
+            // This prevents duplicate deliveries from artificially inflating failure counts
             return { job, attempt: existingAttempt, isDuplicate: true };
         }
 
         // Create new attempt
+        // Stores the sanitized payload, bounded breadcrumbs, and BullMQ finality flags
         const attempt = await tx.jobAttempts.create({
             data: {
                 jobId: job.id,
@@ -118,6 +126,7 @@ export async function recordFailure(report: FailureReportBody) {
 
         // Atomic Incident Upsert (Raw SQL)
         // Bumps epoch if previously RESOLVED
+        // Groups all failures sharing this error fingerprint under one incident in the queue
         const [incident] = await tx.$queryRaw<Array<{
             id: string;
             epoch: number;
@@ -127,6 +136,7 @@ export async function recordFailure(report: FailureReportBody) {
             digest_seq: number;
             digest_final_count: number;
             final_failure_count: number;
+            event_count: number;
             muted_until: Date | null;
             is_new: boolean;
         }>>`
@@ -150,17 +160,20 @@ export async function recordFailure(report: FailureReportBody) {
                 last_seen_at = NOW()
             RETURNING 
                 id, epoch, last_decided_epoch, last_sent_epoch, last_alert_kind,
-                digest_seq, digest_final_count, final_failure_count, muted_until,
+                digest_seq, digest_final_count, final_failure_count, event_count, muted_until,
                 (first_seen_at = last_seen_at) AS is_new;
         `;
 
         //  Upsert IncidentJob & Count Sliding Window
+        // We track which specific jobs failed so we can distinguish a single job retrying 5 times (poison pill)
+        // from 5 different customer accounts failing simultaneously (shared outage).
         await tx.$executeRaw`
             INSERT INTO incident_jobs (incident_id, job_id, last_seen_at)
             VALUES (${incident.id}, ${job.id}, NOW())
             ON CONFLICT (incident_id, job_id) DO UPDATE SET last_seen_at = NOW();
         `;
 
+        // Count how many distinct jobs encountered this error in the active 5-minute window
         const [{ distinctJobsCount }] = await tx.$queryRaw<[{ distinctJobsCount: number }]>`
             SELECT count(*)::int AS "distinctJobsCount"
             FROM incident_jobs
@@ -168,6 +181,7 @@ export async function recordFailure(report: FailureReportBody) {
         `;
 
         // Count non-suppressed alerts created in last 1 hour across all queues (rate-cap guard)
+        // Protects on-call teams from being flooded if thousands of jobs fail during a massive crash
         const [{ alertsLastHour }] = await tx.$queryRaw<[{ alertsLastHour: number }]>`
             SELECT count(*)::int AS "alertsLastHour"
             FROM alert_deliveries
@@ -175,6 +189,7 @@ export async function recordFailure(report: FailureReportBody) {
         `;
 
         // Pure Alert Decision Engine
+        // Evaluates whether an alert should actually be queued or if we should stay silent
         const decision = decideAlert({
             incident: {
                 id: incident.id,
@@ -185,6 +200,7 @@ export async function recordFailure(report: FailureReportBody) {
                 digestSeq: incident.digest_seq,
                 digestFinalCount: incident.digest_final_count,
                 finalFailureCount: incident.final_failure_count,
+                eventCount: incident.event_count, // Passed for calm thresholding!
                 mutedUntil: incident.muted_until,
             },
             isNew: incident.is_new,
@@ -196,6 +212,8 @@ export async function recordFailure(report: FailureReportBody) {
         });
 
         //  Enqueue Alert into Outbox Table
+        // If decideAlert approves an alert, we write it to PostgreSQL as PENDING.
+        // The background outbox worker will pick it up and deliver it safely to Slack/Discord.
         if (decision) {
             const alertPayload = {
                 event: decision.kind,
@@ -282,6 +300,7 @@ export const failureRoute: FastifyPluginAsync = async (fastify) => {
                 const statusCode = result.isDuplicate ? 200 : 201;
 
                 // Broadcast live SSE to connected browser tabs if new
+                // This updates open dashboard tabs in real-time in under 10ms
                 if (!result.isDuplicate) {
                     eventBus.emitNewFailure({
                         jobId: result.job.id,

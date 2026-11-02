@@ -338,8 +338,8 @@ Currently passing **30+ automated tests** covering:
 - [x] 3-Tier non-blocking storage retention engine (Hot, Warm, Cold)
 - [x] Terminal CLI tool (`list` and `inspect`)
 
-- [ ] Incident-based transactional webhook outbox (Slack Block Kit, Discord Embeds)
-- [ ] Global alert rate-capping and auto-recovery notifications
+- [x] Incident-based transactional webhook outbox (Slack Block Kit, Discord Embeds)
+- [x] Global alert rate-capping and auto-recovery notifications
 - [ ] Failure artifact export (`npx job-inspector pull <id>`)
 - [ ] Local replay runner executing worker code against recorded HTTP fixtures
 

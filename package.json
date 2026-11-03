@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm --filter @job-inspector/sdk build && pnpm --filter @job-inspector/web build && pnpm --filter @job-inspector/server build",
     "dev:server": "pnpm --filter @job-inspector/server dev",
-    "dev:worker": "pnpm --filter demo-worker dev",
+    "dev:worker": "pnpm --filter demo-worker worker",
+    "start": "pnpm --filter @job-inspector/server start",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
   },

@@ -5,8 +5,8 @@ RUN npm install -g pnpm
 
 WORKDIR /app
 
-# Copy root configs & manifests
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# Copy root configs & manifests (including tsconfig.base.json!)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/sdk/package.json ./packages/sdk/
 COPY packages/server/package.json ./packages/server/
 COPY packages/cli/package.json ./packages/cli/
@@ -18,7 +18,7 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY packages/ ./packages/
 
-# Placeholder DATABASE_URL so prisma generate succeeds during docker build
+# Fallback DATABASE_URL so prisma generate succeeds during docker build
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 
 # Generate Prisma Client & Build all packages
@@ -33,5 +33,5 @@ ENV HOST=0.0.0.0
 
 EXPOSE 3000
 
-# At runtime, Render injects the REAL DATABASE_URL from your environment settings!
+# Push database schema and start server
 CMD pnpm --filter @job-inspector/server exec prisma db push && node packages/server/dist/index.js

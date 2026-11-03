@@ -9,7 +9,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/sdk/package.json ./packages/sdk/
 COPY packages/server/package.json ./packages/server/
 COPY packages/cli/package.json ./packages/cli/
-COPY packages/web/packages.json ./packages/web/
+COPY packages/web/package.json ./packages/web/
 
 # insall all dependecies
 RUN pnpm insall --frozen-lockfile

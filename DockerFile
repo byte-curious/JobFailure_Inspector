@@ -15,10 +15,13 @@ COPY packages/web/package.json ./packages/web/
 # Install all dependencies
 RUN pnpm install --frozen-lockfile
 
-# Copy all source files
+# Copy source code
 COPY packages/ ./packages/
 
-# Generate Prisma Client & Build all packages (SDK, Web Console, Server)
+# Placeholder DATABASE_URL so prisma generate succeeds during docker build
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+
+# Generate Prisma Client & Build all packages
 RUN pnpm --filter @job-inspector/server exec prisma generate
 RUN pnpm --filter @job-inspector/sdk build
 RUN pnpm --filter @job-inspector/web build
@@ -30,5 +33,5 @@ ENV HOST=0.0.0.0
 
 EXPOSE 3000
 
-# Push database schema and start server
+# At runtime, Render injects the REAL DATABASE_URL from your environment settings!
 CMD pnpm --filter @job-inspector/server exec prisma db push && node packages/server/dist/index.js

@@ -8,6 +8,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { startOutboxWorker, stopOutboxWorker } from "./services/outbox.js";
+import fastifyJwt from "@fastify/jwt"
+import { authRoute } from "./routes/auth.js";
+
 
 // now making fastify serve for both API as well as react dashboard
 // resolve cors error by serving statically
@@ -20,10 +23,14 @@ const __dirname = path.dirname(__filename);
 const fastify = Fastify({
     logger: true
 });
-
+fastify.register(fastifyJwt, {
+    secret: process.env.JWT_SECRET || "supersecret-inspector-jwt-key-change-in-prod",
+})
 
 fastify.register(failureRoute);
 fastify.register(inspectorRoutes);
+fastify.register(authRoute);
+
 
 // Serve Web Dashboard static assets(if build)
 const webDistPath = path.resolve(__dirname, "../../web/dist");

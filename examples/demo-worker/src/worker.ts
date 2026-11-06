@@ -22,6 +22,8 @@ const worker = new Worker(
         // 3. INTENTIONAL CRASH: A brand-new fatal error to trigger a new incident!
         console.log("Simulating fatal crash...");
         throw new Error("Stripe Fatal: API key has expired or was revoked (HTTP 401 Unauthorized)");
+    },{
+        ingestionUrl: "https://jobfailure-inspector.onrender.com/v1/events/failure"
     }),
     { connection: redisConfig }
 );

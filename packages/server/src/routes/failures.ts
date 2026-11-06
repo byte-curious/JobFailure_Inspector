@@ -17,6 +17,7 @@ type FailureReportBody = {
     attemptNumber: number;
     maxAttempts?: number;
     isFinalAttempt?: boolean;
+    apiKey?: string;
     payload?: unknown;
     durationMs: number;
     error: ErrorPayload;
@@ -25,13 +26,47 @@ type FailureReportBody = {
     failedAt?: string;
 };
 
-export async function recordFailure(report: FailureReportBody) {
+// Helper: Ensure a default project exists for unauthenticated local development
+async function getOrCreateLocalProject() {
+    let project = await prisma.project.findFirst({
+        where: { slug: "local-dev" },
+    });
+
+    if (!project) {
+        let user = await prisma.user.findUnique({
+            where: { email: "local-developer@jobinspector.local" },
+        });
+
+        if (!user) {
+            user = await prisma.user.create({
+                data: {
+                    email: "local-developer@jobinspector.local",
+                    name: "Local Developer",
+                },
+            });
+        }
+
+        project = await prisma.project.create({
+            data: {
+                name: "Local Development",
+                slug: "local-dev",
+                apiKey: "insp_live_local_development_key",
+                userId: user.id,
+            },
+        });
+    }
+
+    return project;
+}
+
+export async function recordFailure(report: FailureReportBody, rawApiKey?: string) {
     const {
         queueName,
         jobId,
         attemptNumber,
         maxAttempts = 1,
         isFinalAttempt = false,
+        apiKey: bodyApiKey,
         payload,
         durationMs,
         error,
@@ -40,7 +75,29 @@ export async function recordFailure(report: FailureReportBody) {
         failedAt,
     } = report;
 
-    // 1. Generate normalized fingerprint
+    // 1. Resolve Project by API Key (Multi-Tenant Isolation)
+    const key = rawApiKey || bodyApiKey;
+    let project: { id: string; name: string; webhookUrl: string | null } | null = null;
+
+    if (key) {
+        project = await prisma.project.findUnique({
+            where: { apiKey: key },
+            select: { id: true, name: true, webhookUrl: true },
+        });
+    }
+
+    // In production, reject if key is invalid. In local dev, fallback to local project.
+    if (!project) {
+        if (process.env.NODE_ENV === "production") {
+            throw new Error("UNAUTHORIZED_API_KEY");
+        }
+        project = await getOrCreateLocalProject();
+    }
+
+    const projectId = project.id;
+    const projectWebhook = project.webhookUrl || process.env.WEBHOOK_URL;
+
+    // 2. Generate normalized fingerprint
     // We strip dynamic IDs, IPs, and timestamps so identical errors hash to the exact same SHA-256 fingerprint
     const errorFingerprint = generateErrorFingerprint({
         name: error.name,
@@ -53,15 +110,17 @@ export async function recordFailure(report: FailureReportBody) {
     const finalFailureInc = isFinalAttempt ? 1 : 0;
     const baseUrl = process.env.PUBLIC_URL || "http://localhost:3000";
 
-    // 2. Single Atomic PostgreSQL Transaction
+    // 3. Single Atomic PostgreSQL Transaction
     // Everything (job update, attempt insert, incident grouping, and outbox enqueueing)
     // runs in one transaction so a mid-flight crash never loses an alert or leaves orphan records.
     return await prisma.$transaction(async (tx) => {
         // Upsert Parent Job  
         // We use Math.max so a delayed Attempt 1 arriving after Attempt 2 never downgrades our attempt count
-        const existingJob = await tx.job.findUnique({
+        const existingJob = await tx.job.findFirst({
             where: {
-                queueName_externalJobId: { queueName, externalJobId: jobId },
+                projectId,
+                queueName,
+                externalJobId: jobId,
             },
         });
 
@@ -69,6 +128,7 @@ export async function recordFailure(report: FailureReportBody) {
         if (!existingJob) {
             job = await tx.job.create({
                 data: {
+                    projectId,
                     queueName,
                     externalJobId: jobId,
                     lastErrorFingerprint: errorFingerprint,
@@ -141,15 +201,15 @@ export async function recordFailure(report: FailureReportBody) {
             is_new: boolean;
         }>>`
             INSERT INTO incidents (
-                id, queue_name, error_fingerprint, status, epoch,
+                id, project_id, queue_name, error_fingerprint, status, epoch,
                 last_decided_epoch, last_sent_epoch, digest_seq, digest_final_count,
                 event_count, final_failure_count, first_seen_at, last_seen_at
             ) VALUES (
-                gen_random_uuid(), ${queueName}, ${errorFingerprint}, 'OPEN', 1,
+                gen_random_uuid(), ${projectId}, ${queueName}, ${errorFingerprint}, 'OPEN', 1,
                 0, 0, 0, 0,
                 1, ${finalFailureInc}, NOW(), NOW()
             )
-            ON CONFLICT (queue_name, error_fingerprint) DO UPDATE SET
+            ON CONFLICT (project_id, queue_name, error_fingerprint) DO UPDATE SET
                 epoch = CASE
                     WHEN incidents.status = 'RESOLVED' THEN incidents.epoch + 1
                     ELSE incidents.epoch
@@ -200,7 +260,7 @@ export async function recordFailure(report: FailureReportBody) {
                 digestSeq: incident.digest_seq,
                 digestFinalCount: incident.digest_final_count,
                 finalFailureCount: incident.final_failure_count,
-                eventCount: incident.event_count, // Passed for calm thresholding!
+                eventCount: incident.event_count,
                 mutedUntil: incident.muted_until,
             },
             isNew: incident.is_new,
@@ -213,12 +273,14 @@ export async function recordFailure(report: FailureReportBody) {
 
         //  Enqueue Alert into Outbox Table
         // If decideAlert approves an alert, we write it to PostgreSQL as PENDING.
-        // The background outbox worker will pick it up and deliver it safely to Slack/Discord.
+        // The background outbox worker will pick it up and deliver it safely to this project's webhook.
         if (decision) {
             const alertPayload = {
                 event: decision.kind,
                 incidentId: incident.id,
+                projectId,
                 queueName,
+                webhookUrl: projectWebhook, // <── Route specifically to this project's webhook!
                 errorName: error.name,
                 errorMessage: error.message,
                 errorFingerprint,
@@ -277,6 +339,7 @@ export const failureRoute: FastifyPluginAsync = async (fastify) => {
                         attemptNumber: { type: "integer" },
                         maxAttempts: { type: "integer" },
                         isFinalAttempt: { type: "boolean" },
+                        apiKey: { type: "string" },
                         durationMs: { type: "number" },
                         payload: { type: "object" },
                         droppedBreadcrumbs: { type: "number" },
@@ -296,7 +359,13 @@ export const failureRoute: FastifyPluginAsync = async (fastify) => {
         },
         async (request, reply) => {
             try {
-                const result = await recordFailure(request.body);
+                // Extract API key from Authorization header or body
+                const authHeader = request.headers.authorization;
+                const headerKey = authHeader?.startsWith("Bearer ")
+                    ? authHeader.slice(7).trim()
+                    : (request.headers["x-inspector-key"] as string);
+
+                const result = await recordFailure(request.body, headerKey);
                 const statusCode = result.isDuplicate ? 200 : 201;
 
                 // Broadcast live SSE to connected browser tabs if new
@@ -320,6 +389,13 @@ export const failureRoute: FastifyPluginAsync = async (fastify) => {
                     attemptId: result.attempt.id,
                 });
             } catch (error) {
+                if ((error as Error).message === "UNAUTHORIZED_API_KEY") {
+                    return reply.code(401).send({
+                        error: "UNAUTHORIZED",
+                        message: "Invalid or missing JobInspector Project API key.",
+                    });
+                }
+
                 fastify.log.error({ err: error }, "Failed to record failure report");
 
                 return reply.code(500).send({

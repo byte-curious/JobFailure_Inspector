@@ -24,12 +24,12 @@ export function formatSlackMessage(payload: any) {
         payload.event === "DEAD_LETTER_DIGEST"
             ? `Dead Letter Digest: ${payload.queueName}`
             : payload.event === "ESCALATED_SHARED"
-            ? `Shared Outage Detected in : ${payload.queueName}`
-            : payload.event === "REGRESSION"
-            ? `Regession: Error resumed in : ${payload.queueName}`
-            : payload.event === "RECOVERED"
-            ? `Incident Recovered in : ${payload.queueName}`
-            : `New Error in : ${payload.queueName}`;
+                ? `Shared Outage Detected in : ${payload.queueName}`
+                : payload.event === "REGRESSION"
+                    ? `Regession: Error resumed in : ${payload.queueName}`
+                    : payload.event === "RECOVERED"
+                        ? `Incident Recovered in : ${payload.queueName}`
+                        : `New Error in : ${payload.queueName}`;
 
     const title = escapeMarkdown(rawTitle).slice(0, 150);
     const errorDetails = escapeMarkdown(payload.errorMessage || "No message").slice(0, 2000);
@@ -74,12 +74,12 @@ export function formatDiscordMessage(payload: any) {
         payload.event === "DEAD_LETTER_DIGEST"
             ? `Dead Letter Digest: ${payload.queueName}`
             : payload.event === "ESCALATED_SHARED"
-            ? `Shared Outage detected in ${payload.queueName}`
-            : payload.event === "RECOVERED"
-            ? `Incident Recovered in : ${payload.queueName}`
-            : payload.event === "REGRESSION"
-            ? `Regression: Error Resume in : ${payload.queueName}`
-            : `New Error in : ${payload.queueName}`;
+                ? `Shared Outage detected in ${payload.queueName}`
+                : payload.event === "RECOVERED"
+                    ? `Incident Recovered in : ${payload.queueName}`
+                    : payload.event === "REGRESSION"
+                        ? `Regression: Error Resume in : ${payload.queueName}`
+                        : `New Error in : ${payload.queueName}`;
 
     const title = escapeMarkdown(rawTitle).slice(0, 250);
     const description = escapeMarkdown(payload.errorMessage || "No description").slice(0, 2000);
@@ -113,21 +113,6 @@ export function formatDiscordMessage(payload: any) {
 }
 
 export async function sweepOutboxOnce() {
-    const webhookURL = process.env.WEBHOOK_URL;
-
-    if (!webhookURL) return; // silent if webhook not configured
-    let host;
-    // validate webhook to prevent SSRF;
-    try {
-        const parsedUrl = new URL(webhookURL);
-        host = parsedUrl.hostname.toLowerCase();
-    } catch {
-        console.warn("[OutBox] webhook is not properly configured");
-        return;
-    }
-    const isSlack = host === "hooks.slack.com";
-    const isDiscort = ALLOWED_DISCORD_HOSTS.has(host);
-
     // claims: 5 rows for 45s for lease
     const lockToken = crypto.randomUUID();
     // crypto.createHash('sha256').update(lockToken).digest('hex')
@@ -159,10 +144,27 @@ export async function sweepOutboxOnce() {
     // console.log(claimedRow);
 
     // dispatch the HTTP calls
+    // Resolve webhook URL per-project, falling back to process.env.WEBHOOK_URL
     for (const row of claimedRow) {
+        const webhookURL = row.payload?.webhookUrl || process.env.WEBHOOK_URL;
+        if (!webhookURL) continue; // Skip if this project has no webhook configured!
+
+        let host: string;
+        // validate webhook to prevent SSRF;
+        try {
+            const parsedUrl = new URL(webhookURL);
+            host = parsedUrl.hostname.toLowerCase();
+        } catch {
+            console.warn(`[OutBox] Invalid webhook URL for alert ${row.id}`);
+            continue;
+        }
+
+        const isSlack = host === "hooks.slack.com";
+        const isDiscort = ALLOWED_DISCORD_HOSTS.has(host);
+
         let bodyPayload: any;
-        if (isSlack) bodyPayload = formatSlackMessage(row.payload);  
-        else if (isDiscort) bodyPayload = formatDiscordMessage(row.payload);  
+        if (isSlack) bodyPayload = formatSlackMessage(row.payload);
+        else if (isDiscort) bodyPayload = formatDiscordMessage(row.payload);
         else bodyPayload = row.payload;
 
         try {
@@ -179,7 +181,7 @@ export async function sweepOutboxOnce() {
                         UPDATE alert_deliveries
                         SET status = 'SENT', sent_at = NOW(), lock_token = NULL
                         WHERE id = ${row.id} AND lock_token = ${lockToken};
-                    `;  
+                    `;
 
                     if (row.incident_id) {
                         await tx.$executeRaw`

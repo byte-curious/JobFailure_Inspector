@@ -50,3 +50,21 @@ export async function triggerRetentionSweep(): Promise<{ success: boolean; resul
     if (!res.ok) throw new Error("Failed to trigger retention sweep");
     return res.json();
 }
+export async function sendTestWebhook(webhookUrl?: string): Promise<{ success: boolean; host: string }> {
+    const res = await fetch("/v1/system/alerts/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhookUrl }),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to deliver test alert");
+    }
+    return res.json();
+}
+
+export async function fetchSystemDiagnostics(): Promise<any> {
+    const res = await fetch("/v1/system/diagnostics");
+    if (!res.ok) throw new Error("Failed to fetch diagnostics");
+    return res.json();
+}

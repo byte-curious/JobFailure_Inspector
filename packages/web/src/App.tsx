@@ -6,6 +6,8 @@ import { useLiveStream } from "./api/useLiveStream";
 import { IssuesFeed } from "./components/feed/IssuesFeed";
 import { IssueDetail } from "./components/detail/IssueDetail";
 import { QueueHealth } from "./components/health/QueueHealth";
+import { AdminSettings } from "./components/admin/AdminSettings";
+
 
 export default function App() {
   const [activePage, setActivePage] = useState<PageId>("feed");
@@ -58,6 +60,7 @@ export default function App() {
               )
             )}
             {activePage === "health" && <QueueHealth />}
+            {activePage === "settings" && <AdminSettings />}
           </main>
         </div>
       </div>

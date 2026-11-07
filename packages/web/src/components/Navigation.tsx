@@ -1,7 +1,8 @@
 import React from "react";
-import { ListFilter, FileSearch, Activity } from "lucide-react";
+import { ListFilter, FileSearch, Activity, Settings } from "lucide-react";
 
-export type PageId = "feed" | "detail" | "health";
+
+export type PageId = "feed" | "detail" | "health" | "settings";
 
 type NavigationProps = {
   activePage: PageId;
@@ -13,6 +14,7 @@ export const Navigation: React.FC<NavigationProps> = ({ activePage, onNavigate }
     { id: "feed", label: "Issues Stream", icon: <ListFilter className="w-5 h-5" /> },
     { id: "detail", label: "Issue Details", icon: <FileSearch className="w-5 h-5" /> },
     { id: "health", label: "Queue Health & Storage", icon: <Activity className="w-5 h-5" /> },
+    { id: "settings", label: "Admin & Settings", icon: <Settings className="w-5 h-5" /> },
   ];
 
   return (

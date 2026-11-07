@@ -322,7 +322,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         }
     });
 
-    // 6. GET /v1/system/diagnostics  
+    //  GET /v1/system/diagnostics  
     fastify.get("/v1/system/diagnostics", async (request, reply) => {
         const mem = process.memoryUsage();
         const startDb = Date.now();
@@ -391,5 +391,30 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                 queues: queuesTopology,
             },
         });
+    });
+    //  POST /v1/projects/webhook (Save Custom Project Webhook URL)
+    fastify.post<{ Body: { webhookUrl: string; projectId?: string } }>("/v1/projects/webhook", async (request, reply) => {
+        const { webhookUrl, projectId } = request.body;
+
+        if (!webhookUrl || !webhookUrl.startsWith("http")) {
+            return reply.code(400).send({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS webhook URL." });
+        }
+
+        // Find project (or fallback to default local project)
+        let project = projectId
+            ? await prisma.project.findUnique({ where: { id: projectId } })
+            : await prisma.project.findFirst({ orderBy: { createdAt: "asc" } });
+
+        if (!project) {
+            return reply.code(404).send({ error: "NOT_FOUND", message: "Project not found." });
+        }
+
+        // Save custom webhook to PostgreSQL!
+        const updated = await prisma.project.update({
+            where: { id: project.id },
+            data: { webhookUrl: webhookUrl.trim() },
+        });
+
+        return reply.send({ success: true, webhookUrl: updated.webhookUrl });
     });
 };

@@ -417,4 +417,60 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
         return reply.send({ success: true, webhookUrl: updated.webhookUrl });
     });
+
+    //  GET /v1/jobs/:id/replay-bundle (Export Sanitized Replay Artifact)
+    fastify.get<{ Params: { id: string } }>("/v1/jobs/:id/replay-bundle", async (request, reply) => {
+        const job = await prisma.job.findUnique({
+            where: { id: request.params.id },
+            include: {
+                attempts: {
+                    orderBy: { attemptNumber: "desc" },
+                    take: 1, // Latest attempt
+                },
+            },
+        });
+
+        if (!job || job.attempts.length === 0) {
+            return reply.code(404).send({ error: "NOT_FOUND", message: "Job not found or has no attempts." });
+        }
+
+        const latestAttempt = job.attempts[0];
+
+        // Extract recorded external HTTP fixtures from the breadcrumbs
+        const httpFixtures = Array.isArray(latestAttempt.breadcrumbs)
+            ? (latestAttempt.breadcrumbs as any[])
+                  .filter((b) => b.category === "http" && b.data?.url)
+                  .map((b) => ({
+                      url: b.data.url,
+                      method: b.data.method || "GET",
+                      statusCode: b.data.statusCode || 200,
+                      durationMs: b.data.durationMs || 0,
+                  }))
+            : [];
+
+        // Construct the standardized .replay.json artifact bundle
+        const replayBundle = {
+            version: "1.0.0",
+            exportedAt: new Date().toISOString(),
+            job: {
+                id: job.id,
+                externalJobId: job.externalJobId,
+                queueName: job.queueName,
+                status: job.status,
+                attemptNumber: latestAttempt.attemptNumber,
+                totalAttempts: job.totalAttempts,
+            },
+            error: {
+                name: latestAttempt.errorName,
+                message: latestAttempt.errorMessage,
+                stack: latestAttempt.errorStack,
+                fingerprint: latestAttempt.errorFingerprint,
+            },
+            payload: latestAttempt.payload, // Sanitized input data
+            httpFixtures,                   // Recorded external responses
+            breadcrumbs: latestAttempt.breadcrumbs,
+        };
+
+        return reply.send(replayBundle);
+    });
 };

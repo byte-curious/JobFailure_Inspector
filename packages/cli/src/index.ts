@@ -2,6 +2,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import Table from "cli-table3";
+import fs from "node:fs";
+import path from "node:path";
 
 const program = new Command();
 const API_URL = process.env.INSPECTOR_URL || "http://localhost:3000";
@@ -162,6 +164,96 @@ program
 
         } catch (error) {
             console.error(chalk.red("CLI Error:"), (error as Error).message);
+        }
+    });
+
+
+
+// COMMAND: pull <jobId> (Download Failure Bundle)
+program
+    .command("pull <jobId>")
+    .description("Download a sanitized failure bundle (.replay.json) from the server")
+    .option("-o, --out <path>", "Output file path", "./failure-bundle.json")
+    .action(async (jobId, options) => {
+        try {
+            console.log(chalk.cyan(`\n⚡ Fetching failure artifact for job ${jobId}...`));
+
+            const res = await fetch(`${API_URL}/v1/jobs/${jobId}/replay-bundle`);
+            if (!res.ok) {
+                console.error(chalk.red(`Failed to fetch artifact (${res.status}): Job not found.`));
+                return;
+            }
+
+            const bundle = await res.json();
+            const outputPath = path.resolve(process.cwd(), options.out);
+
+            fs.writeFileSync(outputPath, JSON.stringify(bundle, null, 2), "utf-8");
+
+            console.log(chalk.green(`✔ Successfully exported failure bundle to: ${chalk.bold(options.out)}`));
+            console.log(chalk.gray(`Queue: ${bundle.job.queueName} | Error: ${bundle.error.name}`));
+            console.log(chalk.gray(`HTTP Fixtures recorded: ${bundle.httpFixtures.length}`));
+            console.log(
+                chalk.white(`\nTo replay this job locally, run:\n`) +
+                chalk.cyan(`npx job-inspector replay --file ${options.out}\n`)
+            );
+        } catch (err) {
+            console.error(chalk.red("Error pulling failure bundle:"), (err as Error).message);
+        }
+    });
+
+// COMMAND: replay --file <path> (Run Local Replay with Mocked Network Stubs)
+program
+    .command("replay")
+    .description("Replay a failed job locally using the recorded HTTP fixtures")
+    .requiredOption("-f, --file <path>", "Path to the .replay.json failure bundle")
+    .action(async (options) => {
+        try {
+            const filePath = path.resolve(process.cwd(), options.file);
+            if (!fs.existsSync(filePath)) {
+                console.error(chalk.red(`File not found: ${options.file}`));
+                return;
+            }
+
+            const bundle = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+
+            console.log(chalk.bold.bgMagenta.white("\n ⚡ JOBINSPECTOR LOCAL REPLAY RUNNER \n"));
+            console.log(chalk.bold(`Job: ${chalk.cyan(bundle.job.externalJobId)} | Queue: ${chalk.cyan(bundle.job.queueName)}`));
+            console.log(`Original Error: ${chalk.red(bundle.error.name + ": " + bundle.error.message)}`);
+            console.log(chalk.gray(`Fixtures loaded: ${bundle.httpFixtures.length} external HTTP calls\n`));
+
+            // STUB globalThis.fetch with the recorded fixtures!
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = async (input: any, init?: any) => {
+                const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+                const method = init?.method?.toUpperCase() || "GET";
+
+                // Match against recorded fixtures in the bundle
+                const matchedFixture = bundle.httpFixtures.find((f: any) => f.url === url && f.method === method);
+
+                if (matchedFixture) {
+                    console.log(
+                        chalk.green(`[Mock Agent] Intercepted ${method} ${url} ➔ Replying with recorded status ${matchedFixture.statusCode}`)
+                    );
+                    return new Response(JSON.stringify({ mock: "replayed_fixture", originalStatus: matchedFixture.statusCode }), {
+                        status: matchedFixture.statusCode,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                }
+
+                console.warn(chalk.yellow(`[Mock Agent] Unmocked outgoing fetch to: ${url}. Passing through.`));
+                return originalFetch(input, init);
+            };
+
+            console.log(chalk.bold("── Replaying Injected Payload ──"));
+            console.log(chalk.gray(JSON.stringify(bundle.payload, null, 2)));
+
+            console.log(chalk.green(`\n✔ Mock environment ready. You can now execute your worker handler against this payload.\n`));
+
+            // Restore fetch
+            globalThis.fetch = originalFetch;
+
+        } catch (err) {
+            console.error(chalk.red("Replay error:"), (err as Error).message);
         }
     });
 

@@ -414,47 +414,78 @@ const worker = new Worker("invoices", wrapJob(async (job) => {
                 </div>
             )}
 
-            {/* Buttons: Save Webhook & Send Test Alert */}
-            <div className="pt-2 flex flex-wrap items-center gap-3">
-                <button
-                    onClick={async () => {
-                        if (!testWebhookUrl) {
-                            showToast("Please enter a valid webhook URL first");
-                            return;
-                        }
-                        try {
-                            const res = await fetch("/v1/projects/webhook", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ webhookUrl: testWebhookUrl }),
-                            });
-                            if (res.ok) {
-                                showToast("✔ Webhook URL saved to project! Live alerts active.");
-                                loadDiagnostics();
-                            } else {
-                                showToast("Failed to save webhook URL");
-                            }
-                        } catch (err) {
-                            showToast("Error saving webhook");
-                        }
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-sm transition"
-                    style={{ backgroundColor: "var(--accent)" }}
-                >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Save Webhook URL</span>
-                </button>
+            {/* TAB 3: WEBHOOK ALERTS */}
+            {activeTab === "webhook" && (
+                <div className="glass-panel rounded-xl p-6 space-y-6">
+                    <div>
+                        <h3 className="text-xs font-bold uppercase tracking-wider font-mono" style={{ color: "var(--text-faint)" }}>
+                            Discord & Slack Alert Routing
+                        </h3>
+                        <p className="text-xs font-mono mt-0.5" style={{ color: "var(--text-muted)" }}>
+                            Configure where incident alerts and dead-letter summaries are dispatched
+                        </p>
+                    </div>
 
-                <button
-                    onClick={handleSendTestAlert}
-                    disabled={sendingTest}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium border transition hover:opacity-80"
-                    style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)" }}
-                >
-                    <Send className={`w-3.5 h-3.5 ${sendingTest ? "animate-spin" : ""}`} />
-                    <span>{sendingTest ? "Sending Test..." : "🔔 Send Test Notification"}</span>
-                </button>
-            </div>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-xs font-mono font-bold" style={{ color: "var(--text-muted)" }}>Webhook URL (Discord or Slack)</label>
+                            <input
+                                type="text"
+                                placeholder="https://discord.com/api/webhooks/... or https://hooks.slack.com/..."
+                                value={testWebhookUrl}
+                                onChange={(e) => setTestWebhookUrl(e.target.value)}
+                                className="w-full text-xs font-mono px-3 py-2 rounded-lg border mt-1 focus:outline-none"
+                                style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)" }}
+                            />
+                            <p className="text-[11px] font-mono mt-1" style={{ color: "var(--text-faint)" }}>
+                                Currently configured destination: <strong className="text-purple-400">{diagnostics?.webhook?.host || "None (Using environment variable)"}</strong>
+                            </p>
+                        </div>
+
+                        {/* Buttons: Save Webhook & Send Test Alert */}
+                        <div className="pt-2 flex flex-wrap items-center gap-3">
+                            <button
+                                onClick={async () => {
+                                    if (!testWebhookUrl) {
+                                        showToast("Please enter a valid webhook URL first");
+                                        return;
+                                    }
+                                    try {
+                                        const res = await fetch("/v1/projects/webhook", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ webhookUrl: testWebhookUrl }),
+                                        });
+                                        if (res.ok) {
+                                            showToast("✔ Webhook URL saved to project! Live alerts active.");
+                                            loadDiagnostics();
+                                        } else {
+                                            showToast("Failed to save webhook URL");
+                                        }
+                                    } catch (err) {
+                                        showToast("Error saving webhook");
+                                    }
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-sm transition"
+                                style={{ backgroundColor: "var(--accent)" }}
+                            >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Save Webhook URL</span>
+                            </button>
+
+                            <button
+                                onClick={handleSendTestAlert}
+                                disabled={sendingTest}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium border transition hover:opacity-80"
+                                style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)" }}
+                            >
+                                <Send className={`w-3.5 h-3.5 ${sendingTest ? "animate-spin" : ""}`} />
+                                <span>{sendingTest ? "Sending Test..." : "🔔 Send Test Notification"}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

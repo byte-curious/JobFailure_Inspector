@@ -3,13 +3,13 @@ import type { Breadcrumb } from "../../api/types";
 import { ChevronDown, ChevronRight, Globe, Layers } from "lucide-react";
 
 export const BreadcrumbTrail: React.FC<{
-    breadcrumbs?: Breadcrumb[];
+    breadcrumbs?: Breadcrumb[] | null;
     droppedCount?: number | null;
 }> = ({ breadcrumbs = [], droppedCount = 0 }) => {
     const [filter, setFilter] = useState<string>("all");
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-
-    if (breadcrumbs.length === 0) {
+    const safeBreadcrumbs = Array.isArray(breadcrumbs) ? breadcrumbs : [];
+    if (safeBreadcrumbs.length === 0) {
         return (
             <div className="glass-panel p-6 rounded-xl text-xs font-mono text-center" style={{ color: "var(--text-muted)" }}>
                 No breadcrumb timeline recorded for this attempt.
@@ -17,7 +17,8 @@ export const BreadcrumbTrail: React.FC<{
         );
     }
 
-    const filtered = breadcrumbs.filter((b) => {
+
+    const filtered = safeBreadcrumbs.filter((b) => {
         if (filter === "http") return b.category === "http";
         if (filter === "checkpoints") return b.category === "checkpoint";
         return true;
@@ -32,7 +33,7 @@ export const BreadcrumbTrail: React.FC<{
                         Execution Timeline
                     </h3>
                     <p className="text-[11px] font-mono mt-0.5" style={{ color: "var(--text-muted)" }}>
-                        {breadcrumbs.length} events recorded {droppedCount ? `• ${droppedCount} dropped by ring buffer` : ""}
+                        {safeBreadcrumbs.length} events recorded {droppedCount ? `• ${droppedCount} dropped by ring buffer` : ""}
                     </p>
                 </div>
 
@@ -47,7 +48,7 @@ export const BreadcrumbTrail: React.FC<{
                             fontWeight: filter === "all" ? 600 : 400,
                         }}
                     >
-                        All ({breadcrumbs.length})
+                        All ({safeBreadcrumbs.length})
                     </button>
                     <button
                         onClick={() => setFilter("http")}

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { startOutboxWorker, stopOutboxWorker } from "./services/outbox.js";
 import fastifyJwt from "@fastify/jwt"
-import { authRoute } from "./routes/auth.js";
+import { authRoutes } from "./routes/auth.js";
 
 
 // now making fastify serve for both API as well as react dashboard
@@ -29,7 +29,7 @@ fastify.register(fastifyJwt, {
 
 fastify.register(failureRoute);
 fastify.register(inspectorRoutes);
-fastify.register(authRoute);
+fastify.register(authRoutes);
 
 
 // Serve Web Dashboard static assets(if build)

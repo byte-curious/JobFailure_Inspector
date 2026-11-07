@@ -225,7 +225,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             prisma.jobAttempts.count({
                 where: {
                     failedAt: { lt: sevenDaysAgo, gte: thirtyDaysAgo },
-                    payload: {equals: Prisma.DbNull},
+                    payload: { equals: Prisma.DbNull },
                 },
             }),
             // REAL 24-HOUR HISTOGRAM (Grouped by hour from PostgreSQL)
@@ -261,5 +261,134 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         const { runRetentionSweep } = await import("../services/retention.js");
         const result = await runRetentionSweep(7, 30, 500);
         return reply.send({ success: true, result });
+    });
+    //  POST /v1/system/alerts/test (Send Live Test Webhook Notification)
+    fastify.post<{ Body: { webhookUrl?: string } }>("/v1/system/alerts/test", async (request, reply) => {
+        const targetUrl = request.body?.webhookUrl || process.env.WEBHOOK_URL;
+
+        if (!targetUrl) {
+            return reply.code(400).send({
+                error: "NO_WEBHOOK_CONFIGURED",
+                message: "No webhook URL configured. Pass 'webhookUrl' in body or set WEBHOOK_URL in environment.",
+            });
+        }
+
+        const { formatSlackMessage, formatDiscordMessage } = await import("../services/outbox.js");
+
+        let host = "webhook";
+        try {
+            host = new URL(targetUrl).hostname;
+        } catch {
+            return reply.code(400).send({ error: "INVALID_URL", message: "Invalid webhook URL." });
+        }
+
+        const testPayload = {
+            event: "TEST_NOTIFICATION",
+            queueName: "inspector-system",
+            errorName: "VerificationSuccess",
+            errorMessage: "Webhook delivery verified. Your JobInspector alert pipeline is operating normally.",
+            reason: "Manual verification triggered from JobInspector Admin Console",
+            timestamp: new Date().toISOString(),
+            dashboardUrl: process.env.PUBLIC_URL || "http://localhost:3000",
+        };
+
+        const isSlack = host === "hooks.slack.com";
+        const isDiscord = host.includes("discord.com") || host.includes("discordapp.com");
+        const bodyPayload = isSlack
+            ? formatSlackMessage(testPayload)
+            : isDiscord
+                ? formatDiscordMessage(testPayload)
+                : testPayload;
+
+        try {
+            const res = await fetch(targetUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(bodyPayload),
+                signal: AbortSignal.timeout(3000),
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                return reply.code(res.status).send({
+                    success: false,
+                    message: `Rejected by ${host} (${res.status}): ${text.slice(0, 100)}`,
+                });
+            }
+
+            return reply.send({ success: true, host, status: res.status });
+        } catch (err) {
+            return reply.code(500).send({ success: false, message: (err as Error).message });
+        }
+    });
+
+    // 6. GET /v1/system/diagnostics  
+    fastify.get("/v1/system/diagnostics", async (request, reply) => {
+        const mem = process.memoryUsage();
+        const startDb = Date.now();
+        await prisma.$queryRaw`SELECT 1`; // Measure real DB latency!
+        const dbLatencyMs = Date.now() - startDb;
+
+        const [queueGroups, openIncidents, pendingAlerts, deadAlerts] = await Promise.all([
+            prisma.job.groupBy({
+                by: ["queueName"],
+                _count: { id: true },
+            }),
+            prisma.incident.findMany({
+                where: { status: "OPEN" },
+                select: { queueName: true, lastAlertKind: true },
+            }),
+            prisma.alertDelivery.count({ where: { status: "PENDING" } }),
+            prisma.alertDelivery.count({ where: { status: "DEAD" } }),
+        ]);
+
+        const openQueueSet = new Set(openIncidents.map((i) => i.queueName));
+
+        // Format dynamic queue nodes
+        const queuesTopology = queueGroups.map((q) => {
+            const hasIncident = openQueueSet.has(q.queueName);
+            return {
+                name: q.queueName,
+                failuresCount: q._count.id,
+                status: hasIncident ? "DEGRADED" : "HEALTHY",
+            };
+        });
+
+        // If no jobs exist yet, provide a default demo queue so the map renders
+        if (queuesTopology.length === 0) {
+            queuesTopology.push({
+                name: "default",
+                failuresCount: 0,
+                status: "HEALTHY",
+            });
+        }
+
+        return reply.send({
+            server: {
+                uptimeSeconds: Math.floor(process.uptime()),
+                nodeVersion: process.version,
+                port: Number(process.env.PORT) || 3000,
+                memory: {
+                    rssMb: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+                    heapUsedMb: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+                },
+            },
+            database: {
+                status: "HEALTHY",
+                latencyMs: dbLatencyMs,
+            },
+            outbox: {
+                status: "ACTIVE",
+                pendingCount: pendingAlerts,
+                deadCount: deadAlerts,
+            },
+            webhook: {
+                isConfigured: Boolean(process.env.WEBHOOK_URL),
+                host: process.env.WEBHOOK_URL ? new URL(process.env.WEBHOOK_URL).hostname : null,
+            },
+            topology: {
+                queues: queuesTopology,
+            },
+        });
     });
 };

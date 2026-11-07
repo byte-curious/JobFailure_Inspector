@@ -328,7 +328,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         const startDb = Date.now();
         await prisma.$queryRaw`SELECT 1`; // Measure real DB latency!
         const dbLatencyMs = Date.now() - startDb;
-
+        // console.log("👉 SERVER DATABASE_URL =", process.env.DATABASE_URL);
         const [queueGroups, openIncidents, pendingAlerts, deadAlerts] = await Promise.all([
             prisma.job.groupBy({
                 by: ["queueName"],
@@ -343,7 +343,8 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         ]);
 
         const openQueueSet = new Set(openIncidents.map((i) => i.queueName));
-
+        // console.log("DEBUG: openIncidents in DB =", openIncidents);
+        // console.log("DEBUG: queueGroups in DB =", queueGroups);
         // Format dynamic queue nodes
         const queuesTopology = queueGroups.map((q) => {
             const hasIncident = openQueueSet.has(q.queueName);

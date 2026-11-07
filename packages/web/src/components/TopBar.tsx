@@ -14,7 +14,9 @@ export const TopBar: React.FC<TopBarProps> = ({ activePage, selectedJobId, isCon
     const getPageTitle = () => {
         if (activePage === "feed") return "Issues Stream";
         if (activePage === "detail") return selectedJobId ? `Job #${selectedJobId}` : "Issue Details";
-        return "Queue Health & Storage Retention";
+        if (activePage === "health") return "Queue Health & Storage Retention";
+        if (activePage === "settings") return "Settings & Live Architecture";  
+        return "Workspace";
     };
 
     return (

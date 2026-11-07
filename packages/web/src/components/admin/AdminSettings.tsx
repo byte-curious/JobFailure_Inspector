@@ -182,8 +182,8 @@ export const AdminSettings: React.FC = () => {
                         <div className="flex flex-col lg:flex-row items-center justify-between gap-4 font-mono text-xs">
 
                             {/* COLUMN 1: DYNAMIC QUEUE WORKERS */}
-                            <div className="w-full lg:w-72 space-y-3 shrink-0">
-                                <div className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: "var(--text-faint)" }}>
+                            <div className="w-full lg:w-72 space-y-3 shrink-0 max-h-[380px] overflow-y-auto pr-1">
+                                <div className="text-[11px] font-bold uppercase tracking-wider mb-2 sticky top-0 py-1 z-10" style={{ color: "var(--text-faint)", backgroundColor: "var(--surface)" }}>
                                     Worker Queues ({diagnostics?.topology?.queues?.length || 0})
                                 </div>
 
@@ -400,15 +400,15 @@ export const AdminSettings: React.FC = () => {
                         <div>
                             <label className="text-xs font-mono font-bold" style={{ color: "var(--text-muted)" }}>Worker Integration Snippet</label>
                             <pre className="p-3.5 rounded-lg border font-mono text-xs leading-relaxed overflow-x-auto mt-1" style={{ backgroundColor: "rgba(0,0,0,0.2)", borderColor: "var(--border)", color: "var(--text)" }}>{`import { Worker } from "bullmq";
-                        import { wrapJob, inspector } from "@job-inspector/sdk";
+import { wrapJob, inspector } from "@job-inspector/sdk";
 
-                        const worker = new Worker("invoices", wrapJob(async (job) => {
-                     // Outgoing fetch calls are auto-intercepted!
-                        await fetch("https://api.stripe.com/v1/charges");
-                    }, {
-                          ingestionUrl: "${window.location.origin}/v1/events/failure",
-                          apiKey: "insp_live_local_development_key"
-                        }));`}</pre>
+const worker = new Worker("invoices", wrapJob(async (job) => {
+  // Outgoing fetch calls are auto-intercepted!
+  await fetch("https://api.stripe.com/v1/charges");
+}, {
+  ingestionUrl: "${window.location.origin}/v1/events/failure",
+  apiKey: "insp_live_local_development_key"
+}));`}</pre>
                         </div>
                     </div>
                 </div>

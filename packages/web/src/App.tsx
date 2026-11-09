@@ -9,6 +9,7 @@ import { QueueHealth } from "./components/health/QueueHealth";
 import { AdminSettings } from "./components/admin/AdminSettings";
 import { AuthModal } from "./components/auth/AuthModal";
 import { LandingPage } from "./components/landing/LandingPage";
+import { DocsPortal } from "./components/docs/DocsPortal";
 
 export type ViewMode = "landing" | "docs" | "console";
 
@@ -74,7 +75,7 @@ export default function App() {
             setActiveProject(data.projects[0] || null);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, []);
 
@@ -92,7 +93,7 @@ export default function App() {
   return (
     <ToastProvider>
       <div className="min-h-screen flex flex-col w-full" style={{ backgroundColor: "var(--bg)", color: "var(--text)" }}>
-        
+
         {/* ===================================================================
             VIEW 1: STANDALONE LANDING PAGE (Clean, isolated, floating navbar)
             =================================================================== */}
@@ -107,20 +108,10 @@ export default function App() {
             VIEW 2: DOCUMENTATION PORTAL (/docs)
             =================================================================== */}
         {viewMode === "docs" && (
-          <div className="max-w-4xl mx-auto py-16 px-6 space-y-6">
-            <button
-              onClick={() => navigateTo("landing")}
-              className="text-xs font-mono text-purple-400 hover:underline flex items-center gap-1"
-            >
-              ← Back to Overview
-            </button>
-            <h1 className="text-3xl sm:text-4xl font-bold font-sans" style={{ color: "var(--text)" }}>
-              Documentation Portal
-            </h1>
-            <p className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>
-              Building next in Checkbox 3.
-            </p>
-          </div>
+          <DocsPortal
+            onBackToLanding={() => navigateTo("landing")}
+            onOpenConsole={() => navigateTo("console")}
+          />
         )}
 
         {/* ===================================================================

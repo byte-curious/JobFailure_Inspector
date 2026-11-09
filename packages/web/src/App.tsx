@@ -8,8 +8,20 @@ import { IssueDetail } from "./components/detail/IssueDetail";
 import { QueueHealth } from "./components/health/QueueHealth";
 import { AdminSettings } from "./components/admin/AdminSettings";
 import { AuthModal } from "./components/auth/AuthModal";
+import { LandingPage } from "./components/landing/LandingPage";
+
+export type ViewMode = "landing" | "docs" | "console";
+
+// Detect initial page from browser URL path
+function getInitialViewMode(): ViewMode {
+  const path = window.location.pathname;
+  if (path.startsWith("/docs")) return "docs";
+  if (path.startsWith("/console") || path.startsWith("/main")) return "console";
+  return "landing";
+}
 
 export default function App() {
+  const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
   const [activePage, setActivePage] = useState<PageId>("feed");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
@@ -20,7 +32,26 @@ export default function App() {
 
   const { isConnected } = useLiveStream();
 
-  // Check login state on initial load or OAuth redirect callback (?token=...)
+  // True Browser Path Navigation Helper (updates URL & browser history)
+  const navigateTo = (mode: ViewMode) => {
+    setViewMode(mode);
+    const targetPath = mode === "landing" ? "/" : `/${mode}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ mode }, "", targetPath);
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Sync with browser Back and Forward buttons!
+  useEffect(() => {
+    const handlePopState = () => {
+      setViewMode(getInitialViewMode());
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Handle OAuth Token from redirect callback (?token=...)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthToken = urlParams.get("token");
@@ -28,6 +59,7 @@ export default function App() {
     if (oauthToken) {
       localStorage.setItem("inspector_token", oauthToken);
       window.history.replaceState({}, document.title, window.location.pathname);
+      navigateTo("console");
     }
 
     const token = localStorage.getItem("inspector_token");
@@ -59,60 +91,91 @@ export default function App() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen flex flex-col md:flex-row w-full" style={{ backgroundColor: "var(--bg)", color: "var(--text)" }}>
+      <div className="min-h-screen flex flex-col w-full" style={{ backgroundColor: "var(--bg)", color: "var(--text)" }}>
         
-        {/* Left Persistent Navigation */}
-        <Navigation activePage={activePage} onNavigate={setActivePage} />
-
-        {/* Main Application Container */}
-        <div className="flex-1 flex flex-col min-w-0">
-          
-          {/* Universal Top Bar */}
-          <TopBar
-            activePage={activePage}
-            selectedJobId={selectedJobId}
-            isConnected={isConnected}
-            user={user}
-            activeProject={activeProject}
-            onOpenAuth={() => setIsAuthOpen(true)}
-            onLogout={handleLogout}
+        {/* ===================================================================
+            VIEW 1: STANDALONE LANDING PAGE (Clean, isolated, floating navbar)
+            =================================================================== */}
+        {viewMode === "landing" && (
+          <LandingPage
+            onOpenConsole={() => navigateTo("console")}
+            onOpenDocs={() => navigateTo("docs")}
           />
+        )}
 
-          {/* Page Routing */}
-          <main className="flex-1 flex flex-col overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto w-full">
-            {activePage === "feed" && (
-              <IssuesFeed onSelectJob={handleSelectJob} />
-            )}
+        {/* ===================================================================
+            VIEW 2: DOCUMENTATION PORTAL (/docs)
+            =================================================================== */}
+        {viewMode === "docs" && (
+          <div className="max-w-4xl mx-auto py-16 px-6 space-y-6">
+            <button
+              onClick={() => navigateTo("landing")}
+              className="text-xs font-mono text-purple-400 hover:underline flex items-center gap-1"
+            >
+              ← Back to Overview
+            </button>
+            <h1 className="text-3xl sm:text-4xl font-bold font-sans" style={{ color: "var(--text)" }}>
+              Documentation Portal
+            </h1>
+            <p className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>
+              Building next in Checkbox 3.
+            </p>
+          </div>
+        )}
 
-            {activePage === "detail" && (
-              selectedJobId ? (
-                <IssueDetail jobId={selectedJobId} onBack={() => setActivePage("feed")} />
-              ) : (
-                <div className="glass-panel p-12 text-center rounded-2xl max-w-md mx-auto my-12 space-y-4">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto text-purple-400 bg-purple-500/10 border border-purple-500/20">
-                    ⚡
-                  </div>
-                  <h2 className="text-base font-bold" style={{ color: "var(--text)" }}>No Issue Selected</h2>
-                  <p className="text-xs font-mono leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                    Select a failed background job from the Issues Stream to inspect its full forensic autopsy.
-                  </p>
-                  <button
-                    onClick={() => setActivePage("feed")}
-                    className="px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-sm transition"
-                    style={{ backgroundColor: "var(--accent)" }}
-                  >
-                    Open Issues Stream
-                  </button>
-                </div>
-              )
-            )}
+        {/* ===================================================================
+            VIEW 3: THE SENTRY-GRADE LIVE CONSOLE (/console)
+            =================================================================== */}
+        {viewMode === "console" && (
+          <div className="flex-1 flex flex-col md:flex-row w-full">
+            {/* Left Rail Navigation */}
+            <Navigation activePage={activePage} onNavigate={setActivePage} />
 
-            {activePage === "health" && <QueueHealth />}
+            <div className="flex-1 flex flex-col min-w-0">
+              {/* Universal TopBar with Home Link in Logo */}
+              <TopBar
+                activePage={activePage}
+                selectedJobId={selectedJobId}
+                isConnected={isConnected}
+                user={user}
+                activeProject={activeProject}
+                onOpenAuth={() => setIsAuthOpen(true)}
+                onLogout={handleLogout}
+              />
 
-            {activePage === "settings" && <AdminSettings />}
-          </main>
+              <main className="flex-1 flex flex-col overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto w-full">
+                {activePage === "feed" && <IssuesFeed onSelectJob={handleSelectJob} />}
 
-        </div>
+                {activePage === "detail" && (
+                  selectedJobId ? (
+                    <IssueDetail jobId={selectedJobId} onBack={() => setActivePage("feed")} />
+                  ) : (
+                    <div className="glass-panel p-12 text-center rounded-2xl max-w-md mx-auto my-12 space-y-4">
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto text-purple-400 bg-purple-500/10 border border-purple-500/20">
+                        ⚡
+                      </div>
+                      <h2 className="text-base font-bold" style={{ color: "var(--text)" }}>No Issue Selected</h2>
+                      <p className="text-xs font-mono leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                        Select a failed background job from the Issues Stream to inspect its full forensic autopsy.
+                      </p>
+                      <button
+                        onClick={() => setActivePage("feed")}
+                        className="px-4 py-2 rounded-lg text-xs font-semibold text-white shadow-sm transition"
+                        style={{ backgroundColor: "var(--accent)" }}
+                      >
+                        Open Issues Stream
+                      </button>
+                    </div>
+                  )
+                )}
+
+                {activePage === "health" && <QueueHealth />}
+                {activePage === "settings" && <AdminSettings />}
+              </main>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Authentication Modal */}
@@ -122,6 +185,7 @@ export default function App() {
         onLoginSuccess={(_token: string, u: any, p: any) => {
           setUser(u);
           setActiveProject(p);
+          navigateTo("console");
         }}
       />
     </ToastProvider>

@@ -13,25 +13,26 @@ type JobsQuery = {
     limit?: number;
 };
 
-// 60-second TTL cache for available queues to avoid repeated database scans
-let cachedQueues: { names: string[]; expiresAt: number } | null = null;
-async function getCachedQueues(): Promise<string[]> {
-    const now = Date.now();
-    if (cachedQueues && cachedQueues.expiresAt > now) {
-        return cachedQueues.names;
+// Helper: Extract Project from API Key (Multi-Tenant Isolation)
+async function resolveProject(request: any) {
+    const authHeader = request.headers.authorization;
+    const apiKey = authHeader?.startsWith("Bearer ")
+        ? authHeader.slice(7).trim()
+        : (request.headers["x-inspector-key"] as string);
+
+    if (apiKey) {
+        const project = await prisma.project.findUnique({
+            where: { apiKey },
+            select: { id: true, name: true, webhookUrl: true },
+        });
+        if (project) return project;
     }
-    const rows = await prisma.job.findMany({
-        select: { queueName: true },
-        distinct: ["queueName"],
-    });
-    const names = rows.map((r) => r.queueName);
-    cachedQueues = { names, expiresAt: now + 60_000 };
-    return names;
+    return null;
 }
 
 export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
-    //  1. GET /v1/jobs (Paginated List with Filters)
+    //   GET /v1/jobs (Paginated List with Multi-Tenant Scoping)
     fastify.get<{ Querystring: JobsQuery }>(
         "/v1/jobs",
         {
@@ -48,12 +49,14 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             },
         },
         async (request, reply) => {
+            const project = await resolveProject(request);
             const page = request.query.page ?? 1;
             const limit = request.query.limit ?? 20;
-
             const skip = (page - 1) * limit;
 
-            const where = {
+            // Strict Tenant Isolation: If API key provided, only show that project's jobs!
+            const where: any = {
+                ...(project ? { projectId: project.id } : {}),
                 ...(request.query.queue ? { queueName: request.query.queue } : {}),
                 ...(request.query.status ? { status: request.query.status } : {}),
             };
@@ -67,7 +70,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                     include: {
                         attempts: {
                             orderBy: { attemptNumber: "desc" },
-                            take: 1, // only fetch the lastest attempt for list view
+                            take: 1,
                             select: {
                                 attemptNumber: true,
                                 errorMessage: true,
@@ -79,7 +82,11 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                     },
                 }),
                 prisma.job.count({ where }),
-                getCachedQueues(),
+                prisma.job.findMany({
+                    where: project ? { projectId: project.id } : {},
+                    select: { queueName: true },
+                    distinct: ["queueName"],
+                }),
             ]);
 
             return reply.send({
@@ -98,16 +105,19 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                     limit,
                     totalPages: Math.ceil(totalCnt / limit),
                 },
-                availableQueues: queues,
+                availableQueues: queues.map((q) => q.queueName),
             });
         }
     );
 
-    // 2. GET /v1/jobs/:id (Full Details + Dynamic Diff + Blast Radius)
+    //  GET /v1/jobs/:id (Full Details + Tenant Isolation)
     fastify.get<{ Params: { id: string } }>("/v1/jobs/:id", async (request, reply) => {
-        const job = await prisma.job.findUnique({
+        const project = await resolveProject(request);
+
+        const job = await prisma.job.findFirst({
             where: {
                 id: request.params.id,
+                ...(project ? { projectId: project.id } : {}), // Strictly scoped!
             },
             include: {
                 attempts: {
@@ -119,26 +129,24 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         if (!job) {
             return reply.code(404).send({
                 error: "NOT_FOUND",
-                message: `Job with ID '${request.params.id}' not found.`,
+                message: `Job not found.`,
             });
         }
 
-        const latestAttempt = job.attempts[job.attempts.length - 1]; // latest comment as we above sort the arr acc to the attemmpt number
-        const previousStoredAttempt = job.attempts.length > 1 ? job.attempts[job.attempts.length - 2] : null; // recent second attempt
+        const latestAttempt = job.attempts[job.attempts.length - 1];
+        const previousStoredAttempt = job.attempts.length > 1 ? job.attempts[job.attempts.length - 2] : null;
 
-        // now dynamically computer diff and classification on read
         const diff = latestAttempt ? computeExecutionDiff(latestAttempt, previousStoredAttempt) : null;
-
         const classification = latestAttempt
             ? await classifyAttempt(
-                {
-                    jobId: job.id,
-                    attemptNumber: latestAttempt.attemptNumber,
-                    errorFingerprint: latestAttempt.errorFingerprint,
-                    failedAt: latestAttempt.failedAt,
-                },
-                job.queueName
-            )
+                  {
+                      jobId: job.id,
+                      attemptNumber: latestAttempt.attemptNumber,
+                      errorFingerprint: latestAttempt.errorFingerprint,
+                      failedAt: latestAttempt.failedAt,
+                  },
+                  job.queueName
+              )
             : null;
 
         return reply.send({
@@ -157,9 +165,103 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         });
     });
 
-    //  3. GET : v1/events/stream (Live Server-Sent Event (SSE));
+    //  PATCH /v1/jobs/:id/status (REAL DATABASE MUTATION FOR RESOLVE / IGNORE)
+    fastify.patch<{
+        Params: { id: string };
+        Body: { status: JobStatus; muteMinutes?: number };
+    }>("/v1/jobs/:id/status", async (request, reply) => {
+        const { status, muteMinutes } = request.body;
+
+        const job = await prisma.job.findUnique({
+            where: { id: request.params.id },
+            include: { attempts: { orderBy: { attemptNumber: "desc" }, take: 1 } },
+        });
+
+        if (!job) {
+            return reply.code(404).send({ error: "NOT_FOUND", message: "Job not found." });
+        }
+
+        // 1. Update Job status in PostgreSQL
+        const updatedJob = await prisma.job.update({
+            where: { id: job.id },
+            data: { status },
+        });
+
+        // 2. If an incident exists, update its status or snooze it
+        if (job.lastErrorFingerprint) {
+            const mutedUntil = muteMinutes ? new Date(Date.now() + muteMinutes * 60 * 1000) : null;
+
+            await prisma.incident.updateMany({
+                where: {
+                    queueName: job.queueName,
+                    errorFingerprint: job.lastErrorFingerprint,
+                },
+                data: {
+                    status: status === "RESOLVED" ? "RESOLVED" : "OPEN",
+                    ...(mutedUntil ? { mutedUntil } : {}),
+                },
+            });
+        }
+
+        return reply.send({ success: true, status: updatedJob.status });
+    });
+
+    //  GET /v1/jobs/:id/replay-bundle (Export Sanitized Replay Bundle)
+    fastify.get<{ Params: { id: string } }>("/v1/jobs/:id/replay-bundle", async (request, reply) => {
+        const job = await prisma.job.findUnique({
+            where: { id: request.params.id },
+            include: {
+                attempts: {
+                    orderBy: { attemptNumber: "desc" },
+                    take: 1,
+                },
+            },
+        });
+
+        if (!job || job.attempts.length === 0) {
+            return reply.code(404).send({ error: "NOT_FOUND", message: "Job not found or has no attempts." });
+        }
+
+        const latestAttempt = job.attempts[0];
+
+        const httpFixtures = Array.isArray(latestAttempt.breadcrumbs)
+            ? (latestAttempt.breadcrumbs as any[])
+                  .filter((b) => b.category === "http" && b.data?.url)
+                  .map((b) => ({
+                      url: b.data.url,
+                      method: b.data.method || "GET",
+                      statusCode: b.data.statusCode || 200,
+                      durationMs: b.data.durationMs || 0,
+                  }))
+            : [];
+
+        const replayBundle = {
+            version: "1.0.0",
+            exportedAt: new Date().toISOString(),
+            job: {
+                id: job.id,
+                externalJobId: job.externalJobId,
+                queueName: job.queueName,
+                status: job.status,
+                attemptNumber: latestAttempt.attemptNumber,
+                totalAttempts: job.totalAttempts,
+            },
+            error: {
+                name: latestAttempt.errorName,
+                message: latestAttempt.errorMessage,
+                stack: latestAttempt.errorStack,
+                fingerprint: latestAttempt.errorFingerprint,
+            },
+            payload: latestAttempt.payload,
+            httpFixtures,
+            breadcrumbs: latestAttempt.breadcrumbs,
+        };
+
+        return reply.send(replayBundle);
+    });
+
+    //   GET /v1/events/stream (Live SSE Stream)
     fastify.get("/v1/events/stream", (request, reply) => {
-        // set SSE header
         reply.hijack();
 
         const origin = process.env.CORS_ORIGIN || "*";
@@ -170,12 +272,9 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             "Access-Control-Allow-Origin": origin,
         });
 
-        // send immediate acknowledgement
         reply.raw.write(`data: ${JSON.stringify({ type: "CONNECTED" })}\n\n`);
 
-        // Send heartbeat ping every 20 seconds to prevent proxy timeouts
         const heartbeat = setInterval(() => {
-            // heartbeat with socket write guard
             if (!reply.raw.writableEnded && reply.raw.writable) {
                 try {
                     reply.raw.write(":ping\n\n");
@@ -183,9 +282,8 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                     clearInterval(heartbeat);
                 }
             }
-        }, 20000); // 20,000ms = 20 seconds
+        }, 20000);
 
-        // listener for failure events
         const listener = (eventData: unknown) => {
             if (!reply.raw.writableEnded && reply.raw.writable) {
                 try {
@@ -206,7 +304,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         request.raw.on("close", cleanup);
     });
 
-    // 4. GET /v1/system/health (Per-Queue Stats & 3-Tier Storage Breakdown)
+    //  GET /v1/system/health (Per-Queue Stats & 3-Tier Storage Breakdown)
     fastify.get("/v1/system/health", async (request, reply) => {
         const now = Date.now();
         const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
@@ -228,7 +326,6 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                     payload: { equals: Prisma.DbNull },
                 },
             }),
-            // REAL 24-HOUR HISTOGRAM (Grouped by hour from PostgreSQL)
             prisma.$queryRaw<Array<{ hour: string; count: bigint }>>`
                 SELECT to_char(date_trunc('hour', failed_at), 'HH24:00') as hour, count(*)::int as count
                 FROM job_attempts
@@ -256,12 +353,13 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         });
     });
 
-    // 5. POST /v1/system/retention-sweep (Trigger Manual Storage Sweep)
+    //   POST /v1/system/retention-sweep (Trigger Manual Storage Sweep)
     fastify.post("/v1/system/retention-sweep", async (request, reply) => {
         const { runRetentionSweep } = await import("../services/retention.js");
         const result = await runRetentionSweep(7, 30, 500);
         return reply.send({ success: true, result });
     });
+
     //  POST /v1/system/alerts/test (Send Live Test Webhook Notification)
     fastify.post<{ Body: { webhookUrl?: string } }>("/v1/system/alerts/test", async (request, reply) => {
         const targetUrl = request.body?.webhookUrl || process.env.WEBHOOK_URL;
@@ -297,8 +395,8 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         const bodyPayload = isSlack
             ? formatSlackMessage(testPayload)
             : isDiscord
-                ? formatDiscordMessage(testPayload)
-                : testPayload;
+            ? formatDiscordMessage(testPayload)
+            : testPayload;
 
         try {
             const res = await fetch(targetUrl, {
@@ -322,30 +420,40 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         }
     });
 
-    //  GET /v1/system/diagnostics  
+    //  GET /v1/system/diagnostics (Live Memory, DB Ping, & Architecture Health)
     fastify.get("/v1/system/diagnostics", async (request, reply) => {
         const mem = process.memoryUsage();
-        const startDb = Date.now();
-        await prisma.$queryRaw`SELECT 1`; // Measure real DB latency!
-        const dbLatencyMs = Date.now() - startDb;
-        // console.log("👉 SERVER DATABASE_URL =", process.env.DATABASE_URL);
-        const [queueGroups, openIncidents, pendingAlerts, deadAlerts] = await Promise.all([
-            prisma.job.groupBy({
-                by: ["queueName"],
-                _count: { id: true },
-            }),
-            prisma.incident.findMany({
-                where: { status: "OPEN" },
-                select: { queueName: true, lastAlertKind: true },
-            }),
-            prisma.alertDelivery.count({ where: { status: "PENDING" } }),
-            prisma.alertDelivery.count({ where: { status: "DEAD" } }),
-        ]);
+        let dbLatencyMs: number | null = null;
+        let dbStatus = "HEALTHY";
+        let queueGroups: any[] = [];
+        let openIncidents: any[] = [];
+        let pendingAlerts = 0;
+        let deadAlerts = 0;
+
+        try {
+            const startDb = Date.now();
+            await prisma.$queryRaw`SELECT 1`;
+            dbLatencyMs = Date.now() - startDb;
+
+            [queueGroups, openIncidents, pendingAlerts, deadAlerts] = await Promise.all([
+                prisma.job.groupBy({
+                    by: ["queueName"],
+                    _count: { id: true },
+                }),
+                prisma.incident.findMany({
+                    where: { status: "OPEN" },
+                    select: { queueName: true, lastAlertKind: true },
+                }),
+                prisma.alertDelivery.count({ where: { status: "PENDING" } }),
+                prisma.alertDelivery.count({ where: { status: "DEAD" } }),
+            ]);
+        } catch (dbErr) {
+            dbStatus = "DEGRADED";
+            fastify.log.warn({ err: dbErr }, "Database latency ping failed");
+        }
 
         const openQueueSet = new Set(openIncidents.map((i) => i.queueName));
-        // console.log("DEBUG: openIncidents in DB =", openIncidents);
-        // console.log("DEBUG: queueGroups in DB =", queueGroups);
-        // Format dynamic queue nodes
+
         const queuesTopology = queueGroups.map((q) => {
             const hasIncident = openQueueSet.has(q.queueName);
             return {
@@ -355,10 +463,9 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             };
         });
 
-        // If no jobs exist yet, provide a default demo queue so the map renders
         if (queuesTopology.length === 0) {
             queuesTopology.push({
-                name: "default",
+                name: "invoice",
                 failuresCount: 0,
                 status: "HEALTHY",
             });
@@ -372,10 +479,11 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                 memory: {
                     rssMb: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
                     heapUsedMb: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+                    heapTotalMb: Math.round((mem.heapTotal / 1024 / 1024) * 10) / 10,
                 },
             },
             database: {
-                status: "HEALTHY",
+                status: dbStatus,
                 latencyMs: dbLatencyMs,
             },
             outbox: {
@@ -392,6 +500,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             },
         });
     });
+
     //  POST /v1/projects/webhook (Save Custom Project Webhook URL)
     fastify.post<{ Body: { webhookUrl: string; projectId?: string } }>("/v1/projects/webhook", async (request, reply) => {
         const { webhookUrl, projectId } = request.body;
@@ -400,7 +509,6 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             return reply.code(400).send({ error: "INVALID_URL", message: "Please provide a valid HTTP/HTTPS webhook URL." });
         }
 
-        // Find project (or fallback to default local project)
         let project = projectId
             ? await prisma.project.findUnique({ where: { id: projectId } })
             : await prisma.project.findFirst({ orderBy: { createdAt: "asc" } });
@@ -409,68 +517,11 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             return reply.code(404).send({ error: "NOT_FOUND", message: "Project not found." });
         }
 
-        // Save custom webhook to PostgreSQL!
         const updated = await prisma.project.update({
             where: { id: project.id },
             data: { webhookUrl: webhookUrl.trim() },
         });
 
         return reply.send({ success: true, webhookUrl: updated.webhookUrl });
-    });
-
-    //  GET /v1/jobs/:id/replay-bundle (Export Sanitized Replay Artifact)
-    fastify.get<{ Params: { id: string } }>("/v1/jobs/:id/replay-bundle", async (request, reply) => {
-        const job = await prisma.job.findUnique({
-            where: { id: request.params.id },
-            include: {
-                attempts: {
-                    orderBy: { attemptNumber: "desc" },
-                    take: 1, // Latest attempt
-                },
-            },
-        });
-
-        if (!job || job.attempts.length === 0) {
-            return reply.code(404).send({ error: "NOT_FOUND", message: "Job not found or has no attempts." });
-        }
-
-        const latestAttempt = job.attempts[0];
-
-        // Extract recorded external HTTP fixtures from the breadcrumbs
-        const httpFixtures = Array.isArray(latestAttempt.breadcrumbs)
-            ? (latestAttempt.breadcrumbs as any[])
-                  .filter((b) => b.category === "http" && b.data?.url)
-                  .map((b) => ({
-                      url: b.data.url,
-                      method: b.data.method || "GET",
-                      statusCode: b.data.statusCode || 200,
-                      durationMs: b.data.durationMs || 0,
-                  }))
-            : [];
-
-        // Construct the standardized .replay.json artifact bundle
-        const replayBundle = {
-            version: "1.0.0",
-            exportedAt: new Date().toISOString(),
-            job: {
-                id: job.id,
-                externalJobId: job.externalJobId,
-                queueName: job.queueName,
-                status: job.status,
-                attemptNumber: latestAttempt.attemptNumber,
-                totalAttempts: job.totalAttempts,
-            },
-            error: {
-                name: latestAttempt.errorName,
-                message: latestAttempt.errorMessage,
-                stack: latestAttempt.errorStack,
-                fingerprint: latestAttempt.errorFingerprint,
-            },
-            payload: latestAttempt.payload, // Sanitized input data
-            httpFixtures,                   // Recorded external responses
-            breadcrumbs: latestAttempt.breadcrumbs,
-        };
-
-        return reply.send(replayBundle);
     });
 };

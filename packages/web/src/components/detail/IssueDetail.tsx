@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ArrowLeft, CheckCircle2, EyeOff, RotateCcw, Copy, Terminal, ShieldAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle2, EyeOff, Copy, Terminal, ShieldAlert } from "lucide-react";
 import { fetchJobDetail } from "../../api/client";
 import type { JobDetailResponse } from "../../api/types";
 import { DiffCard } from "./DiffCard";
@@ -88,16 +88,15 @@ export const IssueDetail: React.FC<IssueDetailProps> = ({ jobId, onBack }) => {
                         <span
                             className="px-2 py-0.5 rounded text-[10px] font-bold border"
                             style={{
-                                backgroundColor: "var(--badge-red-bg)",
-                                color: "var(--badge-red-text)",
-                                borderColor: "var(--badge-red-border)",
+                                backgroundColor: job.status === "RESOLVED" ? "rgba(16, 185, 129, 0.1)" : "var(--badge-red-bg)",
+                                color: job.status === "RESOLVED" ? "#10b981" : "var(--badge-red-text)",
+                                borderColor: job.status === "RESOLVED" ? "rgba(16, 185, 129, 0.3)" : "var(--badge-red-border)",
                             }}
                         >
                             {job.status}
                         </span>
                     </div>
 
-                    {/* Clean, Non-Glitching Title */}
                     <h1 className="text-2xl md:text-3xl font-bold tracking-tight font-mono text-rose-400">
                         {currentAttempt?.errorName || "Fatal Error"}
                     </h1>
@@ -106,43 +105,91 @@ export const IssueDetail: React.FC<IssueDetailProps> = ({ jobId, onBack }) => {
                     </p>
                 </div>
 
-                {/* Action Buttons */}
+                {/* Real Action Buttons */}
                 <div className="flex flex-wrap items-center gap-2">
+                    {/* 1. Real Resolve Button */}
                     <button
-                        onClick={() => showToast("Job Marked as Resolved")}
+                        onClick={async () => {
+                            try {
+                                const res = await fetch(`/v1/jobs/${job.id}/status`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ status: "RESOLVED" }),
+                                });
+                                if (res.ok) {
+                                    setData((prev) => prev ? { ...prev, job: { ...prev.job, status: "RESOLVED" } } : prev);
+                                    showToast("✔ Job marked as RESOLVED in database!");
+                                }
+                            } catch {
+                                showToast("Failed to update status");
+                            }
+                        }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition"
                         style={{ backgroundColor: "var(--accent)" }}
                     >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Resolve</span>
                     </button>
+
+                    {/* 2. Real Ignore/Mute Button */}
                     <button
-                        onClick={() => showToast("Job Ignored / Muted")}
+                        onClick={async () => {
+                            try {
+                                const res = await fetch(`/v1/jobs/${job.id}/status`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ status: "FAILED", muteMinutes: 60 }),
+                                });
+                                if (res.ok) {
+                                    showToast("✔ Incident muted for 60 minutes! Alerts paused.");
+                                }
+                            } catch {
+                                showToast("Failed to mute incident");
+                            }
+                        }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition hover:opacity-80"
                         style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)" }}
                     >
                         <EyeOff className="w-3.5 h-3.5" />
-                        <span>Ignore</span>
+                        <span>Ignore (1h)</span>
                     </button>
+
+                    {/* 3. 1-Click Download .replay.json Bundle */}
                     <button
-                        onClick={() => showToast(`Job ${job.externalJobId} re-enqueued to Redis`)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition hover:opacity-80"
-                        style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)", color: "var(--text)" }}
+                        onClick={async () => {
+                            try {
+                                const res = await fetch(`/v1/jobs/${job.id}/replay-bundle`);
+                                if (!res.ok) throw new Error();
+                                const bundle = await res.json();
+                                const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                a.download = `job-${job.externalJobId}-replay.json`;
+                                a.click();
+                                URL.revokeObjectURL(url);
+                                showToast(`✔ Downloaded job-${job.externalJobId}-replay.json`);
+                            } catch {
+                                showToast("Failed to download replay bundle");
+                            }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition hover:opacity-80"
+                        style={{ borderColor: "rgba(6, 182, 212, 0.3)", backgroundColor: "rgba(6, 182, 212, 0.1)", color: "#06b6d4" }}
                     >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Re-enqueue</span>
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span>Download .replay.json</span>
                     </button>
+
+                    {/* 4. Copy CLI Command */}
                     <button
                         onClick={copyReplayCommand}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-medium border transition hover:opacity-80"
                         style={{ borderColor: "rgba(127, 75, 245, 0.3)", backgroundColor: "rgba(127, 75, 245, 0.1)", color: "var(--accent)" }}
                     >
-                        <Terminal className="w-3.5 h-3.5" />
-                        <span>Copy Replay CLI</span>
+                        <span>Copy CLI</span>
                     </button>
                 </div>
             </div>
-
             {/* Main Two-Column Layout (70% Left / 30% Right) */}
             <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
 

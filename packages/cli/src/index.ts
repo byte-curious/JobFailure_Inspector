@@ -8,6 +8,15 @@ import path from "node:path";
 const program = new Command();
 const API_URL = process.env.INSPECTOR_URL || "http://localhost:3000";
 
+// Helper to get auth headers from CLI options or environment variable
+function getAuthHeaders(options?: { key?: string }) {
+    const key = options?.key || process.env.INSPECTOR_API_KEY;
+    return {
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        "Content-Type": "application/json",
+    };
+}
+
 program
     .name("job-inspector")
     .description("Flight Recorder & Triage CLI for background job failures")
@@ -20,6 +29,7 @@ program
     .option("-q, --queue <name>", "Filter by queue name")
     .option("-s, --status <status>", "Filter by status (FAILED, DEAD_LETTER, RESOLVED)")
     .option("-l, --limit <number>", "Number of jobs to display", "15")
+    .option("-k, --key <key>", "Project API Key (insp_live_...)")
     .action(async (options) => {
         try {
             const url = new URL(`${API_URL}/v1/jobs`);
@@ -27,14 +37,16 @@ program
             if (options.status) url.searchParams.set("status", options.status);
             url.searchParams.set("limit", options.limit);
 
-            const res = await fetch(url);
+            const res = await fetch(url.toString(), {
+                headers: getAuthHeaders(options),
+            });
             if (!res.ok) {
                 const err = await res.json() as any;
                 console.error(chalk.red(`Failed to fetch jobs (${res.status}):`), err.message || err);
                 return;
             }
 
-            const { data, pagination }:any = await res.json();
+            const { data, pagination }: any = await res.json();
 
             if (data.length === 0) {
                 console.log(chalk.gray("\nNo matching job failures found.\n"));
@@ -64,8 +76,8 @@ program
                     job.status === "FAILED"
                         ? chalk.red.bold(job.status)
                         : job.status === "DEAD_LETTER"
-                        ? chalk.yellow.bold(job.status)
-                        : chalk.green(job.status);
+                            ? chalk.yellow.bold(job.status)
+                            : chalk.green(job.status);
 
                 const err = job.latestAttempt
                     ? `${chalk.bold(job.latestAttempt.errorName)}: ${job.latestAttempt.errorMessage}`
@@ -99,9 +111,12 @@ program
 program
     .command("inspect <jobId>")
     .description("Forensic investigation and diff for a specific job failure")
-    .action(async (jobId) => {
+    .option("-k, --key <key>", "Project API Key (insp_live_...)")
+    .action(async (jobId, options) => {
         try {
-            const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
+            const res = await fetch(`${API_URL}/v1/jobs/${jobId}`, {
+                headers: getAuthHeaders(options),
+            });
             if (!res.ok) {
                 console.error(chalk.red(`Failed to fetch job (${res.status}): Job not found.`));
                 return;
@@ -121,8 +136,8 @@ program
                     cat === "SHARED_INCIDENT"
                         ? chalk.bgRed.white.bold(" SHARED_INCIDENT ")
                         : cat === "REPEATED_SAME_ERROR"
-                        ? chalk.bgYellow.black.bold(" REPEATED_SAME_ERROR ")
-                        : chalk.bgBlue.white.bold(" ISOLATED_OR_NEW_ERROR ");
+                            ? chalk.bgYellow.black.bold(" REPEATED_SAME_ERROR ")
+                            : chalk.bgBlue.white.bold(" ISOLATED_OR_NEW_ERROR ");
 
                 console.log(chalk.bold("┌─ INCIDENT CLASSIFICATION ─────────────────────────────────────────┐"));
                 console.log(`│ Category: ${badge}`);
@@ -173,18 +188,22 @@ program
 program
     .command("pull <jobId>")
     .description("Download a sanitized failure bundle (.replay.json) from the server")
+    .option("-k, --key <key>", "Project API Key (insp_live_...)")
     .option("-o, --out <path>", "Output file path", "./failure-bundle.json")
     .action(async (jobId, options) => {
         try {
             console.log(chalk.cyan(`\n⚡ Fetching failure artifact for job ${jobId}...`));
 
-            const res = await fetch(`${API_URL}/v1/jobs/${jobId}/replay-bundle`);
+            const res = await fetch(`${API_URL}/v1/jobs/${jobId}/replay-bundle`, {
+                headers: getAuthHeaders(options),
+            });
+            
             if (!res.ok) {
                 console.error(chalk.red(`Failed to fetch artifact (${res.status}): Job not found.`));
                 return;
             }
 
-            const bundle = await res.json();
+            const bundle = await res.json() as any;
             const outputPath = path.resolve(process.cwd(), options.out);
 
             fs.writeFileSync(outputPath, JSON.stringify(bundle, null, 2), "utf-8");

@@ -4,6 +4,7 @@ import chalk from "chalk";
 import Table from "cli-table3";
 import fs from "node:fs";
 import path from "node:path";
+import { exec } from "node:child_process";
 
 const program = new Command();
 const API_URL = process.env.INSPECTOR_URL || "http://localhost:3000";
@@ -273,6 +274,38 @@ program
 
         } catch (err) {
             console.error(chalk.red("Replay error:"), (err as Error).message);
+        }
+    });
+
+
+// COMMAND 5: studio (Prisma Studio style: Open Web Console in Browser)
+program
+    .command("studio")
+    .description("Open the JobInspector Sentry-grade web console in your browser (just like Prisma Studio)")
+    .option("-p, --port <number>", "Port where the dashboard is served", "3000")
+    .option("--browser", "Automatically open the default web browser", true)
+    .action(async (options) => {
+        const port = options.port || "3000";
+        const studioUrl = `http://localhost:${port}`;
+
+        console.log(chalk.bold.bgMagenta.white("\n ⚡ JOBINSPECTOR STUDIO \n"));
+        console.log(`Studio Web Console: ${chalk.bold.cyan(studioUrl)}`);
+        console.log(chalk.gray(`Press ${chalk.bold("Ctrl + C")} to stop.\n`));
+
+        // Automatically open the user's default browser across Linux, macOS, and Windows!
+        if (options.browser) {
+            const startCmd =
+                process.platform === "darwin"
+                    ? `open ${studioUrl}`
+                    : process.platform === "win32"
+                    ? `start ${studioUrl}`
+                    : `xdg-open ${studioUrl}`;
+
+            exec(startCmd, (err) => {
+                if (err) {
+                    console.log(chalk.gray(`Open ${studioUrl} in your browser to view the console.`));
+                }
+            });
         }
     });
 

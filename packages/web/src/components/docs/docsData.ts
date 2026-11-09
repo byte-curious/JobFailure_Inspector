@@ -104,23 +104,29 @@ INSPECTOR_API_KEY="insp_live_your_project_key"`,
         description: "Complete guide to all terminal commands for inspecting, pulling, and replaying failures.",
         callout: {
             type: "note",
-            title: "For Terminal Lovers",
-            text: "You can inspect jobs, view side-by-side retry diffs, and download failure artifacts directly from your terminal without opening a web browser.",
+            title: "Local Monorepo vs. npm",
+            text: "Before publishing to npm, run commands using 'pnpm --filter @job-inspector/cli dev <command>'. Once published to npm, you can run 'npx job-inspector <command>' globally from any project.",
         },
         steps: [
             {
                 id: "cmd-list",
                 stepNumber: 1,
                 title: "List Recent Failures ('list')",
-                description: "Renders a high-density colored ASCII table of recent failed jobs across all queues.",
+                description: "Renders a high-density colored ASCII table of recent failed jobs across all queues. Use --key to isolate to your project.",
                 code: {
                     language: "bash",
                     filename: "terminal",
-                    code: `# List recent failures across all queues
+                    code: `# Global npm usage:
 npx job-inspector list
 
-# Filter by queue or failure status
-npx job-inspector list --queue invoice --status FAILED --limit 20`,
+# Filter by queue and limit:
+npx job-inspector list --queue invoice --limit 20
+
+# With Project API Key (Multi-Tenant Isolation):
+npx job-inspector list --key "insp_live_your_key"
+
+# In local monorepo development:
+pnpm --filter @job-inspector/cli dev list`,
                 },
             },
             {
@@ -131,7 +137,11 @@ npx job-inspector list --queue invoice --status FAILED --limit 20`,
                 code: {
                     language: "bash",
                     filename: "terminal",
-                    code: `npx job-inspector inspect 0befce2e-6cd8-42d4-ac06-68ed08d36f1a`,
+                    code: `# Inspect specific job failure:
+npx job-inspector inspect 0befce2e-6cd8-42d4-ac06-68ed08d36f1a
+
+# Pointing to remote cloud server (e.g. Render):
+INSPECTOR_URL="https://jobfailure-inspector.onrender.com" npx job-inspector inspect <uuid>`,
                 },
             },
             {
@@ -142,7 +152,8 @@ npx job-inspector list --queue invoice --status FAILED --limit 20`,
                 code: {
                     language: "bash",
                     filename: "terminal",
-                    code: `npx job-inspector pull 0befce2e-6cd8 --out ./debug-job.json`,
+                    code: `# Download the failure artifact to your laptop:
+npx job-inspector pull 0befce2e-6cd8-42d4-ac06-68ed08d36f1a --out ./debug-job.json`,
                 },
             },
             {
@@ -153,22 +164,30 @@ npx job-inspector list --queue invoice --status FAILED --limit 20`,
                 code: {
                     language: "bash",
                     filename: "terminal",
-                    code: `npx job-inspector replay --file ./debug-job.json --handler ./src/workers/invoice.ts
+                    code: `# Replay failure locally against your local worker code:
+npx job-inspector replay --file ./debug-job.json --handler ./src/workers/invoice.ts
 
 # Output:
 # [Mock Agent] Intercepted POST https://api.stripe.com/charges ➔ Replying 504 Timeout
-# ✔ CRASH REPRODUCED: Exact match with production failure!`,
+            # ✔ CRASH REPRODUCED: Exact match with production failure!`,
                 },
             },
             {
                 id: "cmd-studio",
                 stepNumber: 5,
-                title: "Launch Local Studio Console ('studio')",
-                description: "Opens the Sentry-grade web console on localhost:3000 against your local database (just like Prisma Studio).",
+                title: "Launch Studio Console in Browser ('studio')",
+                description: "Pops open the Sentry-grade web console in your default web browser on port 3000 (just like Prisma Studio). Pass -p to specify a custom port.",
                 code: {
                     language: "bash",
                     filename: "terminal",
-                    code: `npx job-inspector studio`,
+                    code: `# Open studio in your default browser (defaults to port 3000):
+npx job-inspector studio
+
+# Or specify a custom port:
+npx job-inspector studio -p 3000
+
+# In local monorepo development:
+pnpm --filter @job-inspector/cli dev studio -p 3000`,
                 },
             },
         ],

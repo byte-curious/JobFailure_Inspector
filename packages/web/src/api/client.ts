@@ -1,5 +1,22 @@
 import type { JobsResponse, JobDetailResponse } from "./types";
 
+export type SystemHealthResponse = {
+    totalQueues: number;
+    totalJobs: number;
+    storageTiers: {
+        hotTierCount: number;
+        warmTierCount: number;
+    };
+    queues: Array<{
+        name: string;
+        failedJobsCount: number;
+    }>;
+    hourlySpikes?: Array<{
+        hour: string;
+        count: number;
+    }>;
+};
+
 export async function fetchJobs(params: {
     queue?: string;
     status?: string;
@@ -26,18 +43,6 @@ export async function fetchJobDetail(id: string): Promise<JobDetailResponse> {
     }
     return res.json();
 }
-export type SystemHealthResponse = {
-    totalQueues: number;
-    totalJobs: number;
-    storageTiers: {
-        hotTierCount: number;
-        warmTierCount: number;
-    };
-    queues: Array<{
-        name: string;
-        failedJobsCount: number;
-    }>;
-};
 
 export async function fetchSystemHealth(): Promise<SystemHealthResponse> {
     const res = await fetch("/v1/system/health");
@@ -50,6 +55,8 @@ export async function triggerRetentionSweep(): Promise<{ success: boolean; resul
     if (!res.ok) throw new Error("Failed to trigger retention sweep");
     return res.json();
 }
+
+// ─── ADDED FOR ADMIN SETTINGS ───
 export async function sendTestWebhook(webhookUrl?: string): Promise<{ success: boolean; host: string }> {
     const res = await fetch("/v1/system/alerts/test", {
         method: "POST",
@@ -57,7 +64,7 @@ export async function sendTestWebhook(webhookUrl?: string): Promise<{ success: b
         body: JSON.stringify({ webhookUrl }),
     });
     if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to deliver test alert");
     }
     return res.json();

@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "exportedAt": "2026-11-07T13:45:58.238Z",
+  "job": {
+    "id": "02fc9c54-4b4c-4625-9a09-afcab7d0ee74",
+    "externalJobId": "bill_202",
+    "queueName": "billing",
+    "status": "FAILED",
+    "attemptNumber": 1,
+    "totalAttempts": 1
+  },
+  "error": {
+    "name": "CardDeclined",
+    "message": "Card declined by issuing bank",
+    "stack": null,
+    "fingerprint": "fp_card_declined_quiet"
+  },
+  "payload": null,
+  "httpFixtures": [],
+  "breadcrumbs": null
+}

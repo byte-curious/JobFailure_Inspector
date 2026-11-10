@@ -1,5 +1,5 @@
 {
-  "name": "@job-inspector/cli",
+  "name": "@morpheus.live/cli",
   "version": "0.1.0",
   "description": "Flight recorder and forensic triage CLI for background job failures",
   "type": "module",
@@ -12,24 +12,22 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [
-    "bullmq",
-    "background-jobs",
-    "debugging",
-    "observability",
-    "sentry",
-    "queues"
-  ],
-  "author": "JobInspector Contributors",
-  "license": "MIT",
   "dependencies": {
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.0.0"
-  }
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "license": "MIT"
 }

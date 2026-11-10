@@ -1,5 +1,5 @@
 {
-  "name": "@job-inspector/sdk",
+  "name": "@morpheus.live/sdk",
   "version": "0.1.0",
   "description": "In-memory flight recorder and diagnostic SDK for background jobs",
   "type": "module",
@@ -8,6 +8,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "test": "tsx --test 'test/**/*.test.ts'",
@@ -26,12 +29,5 @@
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3"
   },
-  "keywords": [
-    "bullmq",
-    "worker",
-    "flight-recorder",
-    "observability",
-    "tracing"
-  ],
   "license": "MIT"
 }

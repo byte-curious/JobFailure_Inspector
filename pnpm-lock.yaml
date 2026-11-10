@@ -20,11 +20,11 @@ importers:
 
   examples/demo-worker:
     dependencies:
-      '@job-inspector/sdk':
+      '@morpheus.live/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       bullmq:
-        specifier: ^5.81.5
+        specifier: ^5.4.0
         version: 5.81.5
       dotenv:
         specifier: ^16.4.5
@@ -41,6 +41,13 @@ importers:
       commander:
         specifier: ^12.0.0
         version: 12.1.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.43
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
 
   packages/sdk:
     devDependencies:

@@ -1,8 +1,7 @@
 import { Worker } from "bullmq";
 import { redisConfig } from "./config/redis.js";
-import { wrapJob, inspector } from "@job-inspector/sdk";
 import type { Job } from "bullmq";
-
+import { wrapJob, inspector } from "@morpheus.live/sdk";
 console.log("⚡ Starting Worker and connecting to Redis...");
 
 const worker = new Worker(

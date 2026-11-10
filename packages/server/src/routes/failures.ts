@@ -78,14 +78,13 @@ export async function recordFailure(report: FailureReportBody, rawApiKey?: strin
     // 1. Resolve Project by API Key (Multi-Tenant Isolation)
     const key = rawApiKey || bodyApiKey;
     let project: { id: string; name: string; webhookUrl: string | null } | null = null;
-
-    if (key) {
+    if (key && key !== "sandbox" && key !== "insp_demo_sandbox") {
         project = await prisma.project.findUnique({
             where: { apiKey: key },
             select: { id: true, name: true, webhookUrl: true },
         });
     }
-
+    
     // In production, reject if key is invalid. In local dev, fallback to local project.
     if (!project) {
         if (process.env.NODE_ENV === "production") {
@@ -280,7 +279,7 @@ export async function recordFailure(report: FailureReportBody, rawApiKey?: strin
                 incidentId: incident.id,
                 projectId,
                 queueName,
-                webhookUrl: projectWebhook, // <── Route specifically to this project's webhook!
+                webhookUrl: projectWebhook,  
                 errorName: error.name,
                 errorMessage: error.message,
                 errorFingerprint,

@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm --filter @job-inspector/sdk build && pnpm --filter @job-inspector/web build && pnpm --filter @job-inspector/server build",
+    "build": "pnpm --filter @morpheus.live/sdk build && pnpm --filter @morpheus.live/cli build && pnpm --filter @job-inspector/web build && pnpm --filter @job-inspector/server build",
+    "test": "pnpm --filter @morpheus.live/sdk test && pnpm --filter @job-inspector/server test",
     "dev:server": "pnpm --filter @job-inspector/server dev",
-    "dev:worker": "pnpm --filter demo-worker worker",
-    "start": "pnpm --filter @job-inspector/server start",
+    "dev:worker": "pnpm --filter example-basic-bullmq worker",
+    "dev:web": "pnpm --filter @job-inspector/web dev",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
   },

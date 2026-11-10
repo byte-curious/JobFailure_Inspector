@@ -18,17 +18,27 @@ importers:
         specifier: ^5.3.3
         version: 5.9.3
 
-  examples/demo-worker:
+  examples/basic-bullmq:
     dependencies:
       '@morpheus.live/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
+        specifier: ^0.1.0
+        version: 0.1.0(bullmq@5.81.5)
       bullmq:
-        specifier: ^5.4.0
+        specifier: ^5.8.0
         version: 5.81.5
       dotenv:
         specifier: ^16.4.5
         version: 16.6.1
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.43
+      tsx:
+        specifier: ^4.7.1
+        version: 4.23.15
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
 
   packages/cli:
     dependencies:
@@ -535,6 +545,14 @@ packages:
   '@lukeed/ms@2.0.2':
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
     engines: {node: '>=8'}
+
+  '@morpheus.live/sdk@0.1.0':
+    resolution: {integrity: sha512-PLqht3In9h2/oFdVDqKU8BM3ONG8Iu6vhO5UxsZLDwZDPBymeWfccJ/Qz3WHnmR6ieu5cTzHdwmxEWxpkHso+w==}
+    peerDependencies:
+      bullmq: '>=5.0.0'
+    peerDependenciesMeta:
+      bullmq:
+        optional: true
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     resolution: {integrity: sha512-LCkGo6JDfaBhgST7UpPWgNgLINpcpabaHfyz5OBx75nUYxBsaEPxjnyNjWpeb/xBup/682QnBfRBy2/LvPutZQ==}
@@ -2759,6 +2777,10 @@ snapshots:
   '@keyv/serialize@1.1.1': {}
 
   '@lukeed/ms@2.0.2': {}
+
+  '@morpheus.live/sdk@0.1.0(bullmq@5.81.5)':
+    optionalDependencies:
+      bullmq: 5.81.5
 
   '@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4':
     optional: true

@@ -6,3 +6,5 @@ allowBuilds:
   esbuild: false
   msgpackr-extract: false
   prisma: false
+minimumReleaseAgeExclude:
+  - '@morpheus.live/sdk@0.1.0'

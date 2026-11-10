@@ -35,11 +35,11 @@ export const DOCS_SECTIONS: DocSection[] = [
                 id: "install-sdk",
                 stepNumber: 1,
                 title: "Install the Worker SDK from npm",
-                description: "Add the client package to your background worker service using npm or pnpm.",
+                description: "Add the client package to your background worker service using npm, pnpm, or yarn.",
                 code: {
                     language: "bash",
                     filename: "terminal",
-                    code: "npm install @job-inspector/sdk\n# or\npnpm add @job-inspector/sdk",
+                    code: "npm install @morpheus.live/sdk\n# or\npnpm add @morpheus.live/sdk",
                 },
             },
             {
@@ -51,7 +51,7 @@ export const DOCS_SECTIONS: DocSection[] = [
                     language: "typescript",
                     filename: "src/workers/invoiceWorker.ts",
                     code: `import { Worker } from "bullmq";
-import { wrapJob, inspector } from "@job-inspector/sdk";
+import { wrapJob, inspector } from "@morpheus.live/sdk";
 
 // Wrap your processor: HTTP calls & checkpoints are auto-recorded!
 const worker = new Worker("invoices", wrapJob(async (job) => {
@@ -78,7 +78,7 @@ const worker = new Worker("invoices", wrapJob(async (job) => {
                 code: {
                     language: "bash",
                     filename: ".env",
-                    code: `INSPECTOR_INGESTION_URL="https://jobfailure-inspector.onrender.com/v1/events/failure"
+                    code: `INSPECTOR_INGESTION_URL="https://job-failure-inspector.vercel.app/v1/events/failure"
 INSPECTOR_API_KEY="insp_live_your_project_key"`,
                 },
             },
@@ -95,6 +95,73 @@ INSPECTOR_API_KEY="insp_live_your_project_key"`,
     },
 
     // =========================================================================
+    // COMPANY SETUP & MULTI-TENANT ISOLATION
+    // =========================================================================
+    {
+        id: "company-setup",
+        category: "Getting Started",
+        title: "Company Setup & Private Alerts",
+        description: "How to isolate your company's errors, get a private API key, and route alerts strictly to your Discord or Slack.",
+        callout: {
+            type: "tip",
+            title: "Data Isolation Guarantee",
+            text: "Every job, attempt, and incident is partitioned in PostgreSQL by your projectId. Your background failures are mathematically invisible to other companies, and alerts are routed exclusively to your private webhook.",
+        },
+        steps: [
+            {
+                id: "step-signup",
+                stepNumber: 1,
+                title: "Create Your Workspace Account",
+                description: "Sign in at job-failure-inspector.vercel.app using GitHub, Google, or Email. The platform automatically provisions your private company project and generates an encryption-safe API key.",
+            },
+            {
+                id: "step-webhook",
+                stepNumber: 2,
+                title: "Configure Your Private Discord / Slack Webhook",
+                description: "Navigate to Settings (⚙️) on the left rail -> Webhook Alert Integration tab. Paste your team's Discord or Slack webhook URL and click 'Save Webhook URL'. Click 'Send Test Notification' to verify the ping.",
+            },
+            {
+                id: "step-api-key",
+                stepNumber: 3,
+                title: "Add Credentials to Your Worker Environment",
+                description: "In your background worker repository, add your project API key and ingestion endpoint to your .env file.",
+                code: {
+                    language: "bash",
+                    filename: ".env",
+                    code: `INSPECTOR_INGESTION_URL="https://job-failure-inspector.vercel.app/v1/events/failure"
+INSPECTOR_API_KEY="insp_live_your_private_project_key"`,
+                },
+            },
+            {
+                id: "step-wrap",
+                stepNumber: 4,
+                title: "Wrap Your BullMQ Worker",
+                description: "Import wrapJob from @morpheus.live/sdk and wrap your worker handler. It automatically reads the environment variables without any extra configuration.",
+                code: {
+                    language: "typescript",
+                    filename: "src/worker.ts",
+                    code: `import { Worker } from "bullmq";
+import { wrapJob } from "@morpheus.live/sdk";
+
+// Zero code changes! Automatically reads API key and URL from process.env:
+const worker = new Worker("invoices", wrapJob(async (job) => {
+  // Your worker logic here...
+}));`,
+                },
+            },
+        ],
+        deepDive: {
+            id: "tenant-isolation-architecture",
+            title: "How Data Isolation Works Under the Hood",
+            paragraphs: [
+                "1. When your worker reports a failure, the Fastify ingestion server extracts your Bearer API key and verifies it against the projects table in PostgreSQL.",
+                "2. The failure attempt and incident are tagged with your project_id. Compound unique constraints ensure that even if two different companies have a queue named 'invoices' with job ID '1', their records never collide.",
+                "3. When the transactional outbox worker dispatches an alert, it routes the payload strictly to the webhook_url saved on your project record. Other companies never receive your notifications.",
+            ],
+        },
+    },
+
+    // =========================================================================
     // 2. TERMINAL CLI REFERENCE
     // =========================================================================
     {
@@ -104,8 +171,8 @@ INSPECTOR_API_KEY="insp_live_your_project_key"`,
         description: "Complete guide to all terminal commands for inspecting, pulling, and replaying failures.",
         callout: {
             type: "note",
-            title: "Local Monorepo vs. npm",
-            text: "Before publishing to npm, run commands using 'pnpm --filter @job-inspector/cli dev <command>'. Once published to npm, you can run 'npx job-inspector <command>' globally from any project.",
+            title: "Published on npm",
+            text: "You can run any command instantly with 'npx @morpheus.live/cli <command>' or install it globally with 'npm install -g @morpheus.live/cli'.",
         },
         steps: [
             {
@@ -117,16 +184,16 @@ INSPECTOR_API_KEY="insp_live_your_project_key"`,
                     language: "bash",
                     filename: "terminal",
                     code: `# Global npm usage:
-npx job-inspector list
+npx @morpheus.live/cli list
 
 # Filter by queue and limit:
-npx job-inspector list --queue invoice --limit 20
+npx @morpheus.live/cli list --queue invoice --limit 20
 
 # With Project API Key (Multi-Tenant Isolation):
-npx job-inspector list --key "insp_live_your_key"
+npx @morpheus.live/cli list --key "insp_live_your_key"
 
 # In local monorepo development:
-pnpm --filter @job-inspector/cli dev list`,
+pnpm --filter @morpheus.live/cli dev list`,
                 },
             },
             {
@@ -138,10 +205,10 @@ pnpm --filter @job-inspector/cli dev list`,
                     language: "bash",
                     filename: "terminal",
                     code: `# Inspect specific job failure:
-npx job-inspector inspect 0befce2e-6cd8-42d4-ac06-68ed08d36f1a
+npx @morpheus.live/cli inspect 0befce2e-6cd8-42d4-ac06-68ed08d36f1a
 
-# Pointing to remote cloud server (e.g. Render):
-INSPECTOR_URL="https://jobfailure-inspector.onrender.com" npx job-inspector inspect <uuid>`,
+# Pointing to your live cloud deployment:
+INSPECTOR_URL="https://job-failure-inspector.vercel.app" npx @morpheus.live/cli inspect <uuid>`,
                 },
             },
             {
@@ -153,7 +220,7 @@ INSPECTOR_URL="https://jobfailure-inspector.onrender.com" npx job-inspector insp
                     language: "bash",
                     filename: "terminal",
                     code: `# Download the failure artifact to your laptop:
-npx job-inspector pull 0befce2e-6cd8-42d4-ac06-68ed08d36f1a --out ./debug-job.json`,
+npx @morpheus.live/cli pull 0befce2e-6cd8-42d4-ac06-68ed08d36f1a --out ./debug-job.json`,
                 },
             },
             {
@@ -165,11 +232,11 @@ npx job-inspector pull 0befce2e-6cd8-42d4-ac06-68ed08d36f1a --out ./debug-job.js
                     language: "bash",
                     filename: "terminal",
                     code: `# Replay failure locally against your local worker code:
-npx job-inspector replay --file ./debug-job.json --handler ./src/workers/invoice.ts
+npx @morpheus.live/cli replay --file ./debug-job.json --handler ./src/workers/invoice.ts
 
 # Output:
 # [Mock Agent] Intercepted POST https://api.stripe.com/charges ➔ Replying 504 Timeout
-            # ✔ CRASH REPRODUCED: Exact match with production failure!`,
+# ✔ CRASH REPRODUCED: Exact match with production failure!`,
                 },
             },
             {
@@ -181,13 +248,13 @@ npx job-inspector replay --file ./debug-job.json --handler ./src/workers/invoice
                     language: "bash",
                     filename: "terminal",
                     code: `# Open studio in your default browser (defaults to port 3000):
-npx job-inspector studio
+npx @morpheus.live/cli studio
 
 # Or specify a custom port:
-npx job-inspector studio -p 3000
+npx @morpheus.live/cli studio -p 3000
 
 # In local monorepo development:
-pnpm --filter @job-inspector/cli dev studio -p 3000`,
+pnpm --filter @morpheus.live/cli dev studio -p 3000`,
                 },
             },
         ],
@@ -215,7 +282,9 @@ pnpm --filter @job-inspector/cli dev studio -p 3000`,
                 code: {
                     language: "typescript",
                     filename: "examples/checkpoints.ts",
-                    code: `// Add structured milestones anywhere in your worker or helper functions:
+                    code: `import { inspector } from "@morpheus.live/sdk";
+
+// Add structured milestones anywhere in your worker or helper functions:
 inspector.checkpoint("Step 1: Unzipping user archive", { fileCount: 42 });
 inspector.checkpoint("Step 2: Converting images to WebP", { quality: 80 });
 

@@ -14,20 +14,37 @@ type JobsQuery = {
 };
 
 // Helper: Extract Project from API Key (Multi-Tenant Isolation)
-async function resolveProject(request: any) {
+async function resolveProject(request: any, fastify: any) {
+    // 1. Check API Key first (for Worker SDK and CLI)
     const authHeader = request.headers.authorization;
-    const apiKey = authHeader?.startsWith("Bearer ")
-        ? authHeader.slice(7).trim()
-        : (request.headers["x-inspector-key"] as string);
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : null;
 
-    if (apiKey) {
+    if (bearerToken?.startsWith("insp_live_")) {
         const project = await prisma.project.findUnique({
-            where: { apiKey },
+            where: { apiKey: bearerToken },
             select: { id: true, name: true, webhookUrl: true },
         });
         if (project) return project;
     }
-    return null;
+
+    // 2. Check JWT User Session (for Logged-in Web Users!)
+    if (bearerToken) {
+        try {
+            const decoded = fastify.jwt.verify(bearerToken) as { userId: string };
+            if (decoded?.userId) {
+                const userProject = await prisma.project.findFirst({
+                    where: { userId: decoded.userId },
+                    orderBy: { createdAt: "asc" },
+                    select: { id: true, name: true, webhookUrl: true },
+                });
+                if (userProject) return userProject;
+            }
+        } catch {
+            // Invalid JWT token -> Fallback to sandbox
+        }
+    }
+
+    return null; // Guest user in Public Sandbox!
 }
 
 export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
@@ -49,7 +66,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             },
         },
         async (request, reply) => {
-            const project = await resolveProject(request);
+            const project = await resolveProject(request, fastify);
             const page = request.query.page ?? 1;
             const limit = request.query.limit ?? 20;
             const skip = (page - 1) * limit;
@@ -112,7 +129,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
     //  GET /v1/jobs/:id (Full Details + Tenant Isolation)
     fastify.get<{ Params: { id: string } }>("/v1/jobs/:id", async (request, reply) => {
-        const project = await resolveProject(request);
+        const project = await resolveProject(request, fastify);
 
         const job = await prisma.job.findFirst({
             where: {

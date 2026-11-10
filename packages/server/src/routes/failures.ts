@@ -84,7 +84,7 @@ export async function recordFailure(report: FailureReportBody, rawApiKey?: strin
             select: { id: true, name: true, webhookUrl: true },
         });
     }
-    
+
     // In production, reject if key is invalid. In local dev, fallback to local project.
     if (!project) {
         if (process.env.NODE_ENV === "production") {
@@ -279,7 +279,7 @@ export async function recordFailure(report: FailureReportBody, rawApiKey?: strin
                 incidentId: incident.id,
                 projectId,
                 queueName,
-                webhookUrl: projectWebhook,  
+                webhookUrl: projectWebhook,
                 errorName: error.name,
                 errorMessage: error.message,
                 errorFingerprint,
@@ -325,6 +325,15 @@ export async function recordFailure(report: FailureReportBody, rawApiKey?: strin
 }
 
 export const failureRoute: FastifyPluginAsync = async (fastify) => {
+    // Health check for curious developers visiting in browser
+    fastify.get("/v1/events/failure", async (request, reply) => {
+        return reply.send({
+            status: "ONLINE",
+            service: "JobInspector Ingestion Gateway",
+            methodExpected: "POST",
+            message: "Send failure reports via HTTP POST with { queueName, jobId, attemptNumber, durationMs, error }",
+        });
+    });
     fastify.post<{ Body: FailureReportBody }>(
         "/v1/events/failure",
         {

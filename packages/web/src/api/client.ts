@@ -17,6 +17,15 @@ export type SystemHealthResponse = {
     }>;
 };
 
+// Helper: Get JWT auth headers from localStorage
+function getAuthHeaders(): HeadersInit {
+    const token = typeof window !== "undefined" ? localStorage.getItem("inspector_token") : null;
+    return {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": "application/json",
+    };
+}
+
 export async function fetchJobs(params: {
     queue?: string;
     status?: string;
@@ -29,7 +38,9 @@ export async function fetchJobs(params: {
     if (params.page) url.searchParams.set("page", String(params.page));
     if (params.limit) url.searchParams.set("limit", String(params.limit));
 
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), {
+        headers: getAuthHeaders(),  
+    });
     if (!res.ok) {
         throw new Error(`Failed to fetch jobs (${res.status})`);
     }
@@ -37,7 +48,9 @@ export async function fetchJobs(params: {
 }
 
 export async function fetchJobDetail(id: string): Promise<JobDetailResponse> {
-    const res = await fetch(`/v1/jobs/${id}`);
+    const res = await fetch(`/v1/jobs/${id}`, {
+        headers: getAuthHeaders(),  
+    });
     if (!res.ok) {
         throw new Error(`Failed to fetch job detail (${res.status})`);
     }

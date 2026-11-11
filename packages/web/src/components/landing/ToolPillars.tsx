@@ -46,7 +46,7 @@ export const ToolPillars: React.FC<{ onOpenConsole: () => void }> = ({ onOpenCon
             <span className="text-xs font-mono uppercase font-bold tracking-wider" style={{ color: cyanColor }}>
               01 • THE WORKER SDK
             </span>
-            <h3 className="text-xl font-bold font-sans" style={{ color: "var(--text)" }}>@job-inspector/sdk</h3>
+            <h3 className="text-xl font-bold font-sans" style={{ color: "var(--text)" }}>@morpheus.live/sdk</h3>
             <p className="text-sm font-sans leading-relaxed" style={{ color: "var(--text-muted)" }}>
               Wraps your BullMQ worker in 2 lines. Automatically intercepts outgoing <code className="font-mono text-xs px-1.5 py-0.5 rounded border" style={{ borderColor: "var(--border)" }}>fetch()</code> calls, scrubs passwords in memory with a WeakSet, and maintains a bounded 50-item ring buffer.
             </p>
@@ -59,7 +59,7 @@ export const ToolPillars: React.FC<{ onOpenConsole: () => void }> = ({ onOpenCon
               color: cyanColor,
             }}
           >
-            npm install @job-inspector/sdk
+            npm i @morpheus.live/sdk
           </div>
         </div>
 

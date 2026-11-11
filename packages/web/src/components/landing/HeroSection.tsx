@@ -11,7 +11,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onOpenConsole, onOpenD
     const [copied, setCopied] = useState(false);
     const { showToast } = useToast();
 
-    const installCmd = "npm install @job-inspector/sdk";
+    const installCmd = "npm i @morpheus.live/sdk";
 
     const copyInstall = () => {
         navigator.clipboard.writeText(installCmd);

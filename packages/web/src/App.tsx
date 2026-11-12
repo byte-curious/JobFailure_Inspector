@@ -94,19 +94,12 @@ export default function App() {
     <ToastProvider>
       <div className="min-h-screen flex flex-col w-full" style={{ backgroundColor: "var(--bg)", color: "var(--text)" }}>
 
-        {/* ===================================================================
-            VIEW 1: STANDALONE LANDING PAGE (Clean, isolated, floating navbar)
-            =================================================================== */}
         {viewMode === "landing" && (
           <LandingPage
             onOpenConsole={() => navigateTo("console")}
             onOpenDocs={() => navigateTo("docs")}
           />
         )}
-
-        {/* ===================================================================
-            VIEW 2: DOCUMENTATION PORTAL (/docs)
-            =================================================================== */}
         {viewMode === "docs" && (
           <DocsPortal
             onBackToLanding={() => navigateTo("landing")}
@@ -114,9 +107,6 @@ export default function App() {
           />
         )}
 
-        {/* ===================================================================
-            VIEW 3: THE SENTRY-GRADE LIVE CONSOLE (/console)
-            =================================================================== */}
         {viewMode === "console" && (
           <div className="flex-1 flex flex-col md:flex-row w-full">
             {/* Left Rail Navigation */}
@@ -161,7 +151,7 @@ export default function App() {
                 )}
 
                 {activePage === "health" && <QueueHealth />}
-                {activePage === "settings" && <AdminSettings />}
+                {activePage === "settings" && <AdminSettings activeProject={activeProject} />}
               </main>
             </div>
           </div>

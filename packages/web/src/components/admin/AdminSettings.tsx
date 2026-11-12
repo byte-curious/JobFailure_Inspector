@@ -14,7 +14,11 @@ import {
 import { fetchSystemDiagnostics, sendTestWebhook } from "../../api/client";
 import { useToast } from "../Toast";
 
-export const AdminSettings: React.FC = () => {
+type AdminSettingsProps = {
+  activeProject?: any;
+};
+
+export const AdminSettings: React.FC<AdminSettingsProps> = ({ activeProject }) => {
     const [activeTab, setActiveTab] = useState<"api" | "webhook" | "architecture">("architecture");
     const [diagnostics, setDiagnostics] = useState<any>(null);
     const [testWebhookUrl, setTestWebhookUrl] = useState("");
@@ -344,7 +348,7 @@ export const AdminSettings: React.FC = () => {
                 </div>
             )}
 
-            {/* TAB 2: API KEYS & SDK SETUP */}
+            {/* TAB 2: API KEYS & SDK SETUP (RESTORED COMPLETELY!) */}
             {activeTab === "api" && (
                 <div className="glass-panel rounded-xl p-6 space-y-6">
                     <div>
@@ -352,7 +356,7 @@ export const AdminSettings: React.FC = () => {
                             Project Ingestion Credentials
                         </h3>
                         <p className="text-xs font-mono mt-0.5" style={{ color: "var(--text-muted)" }}>
-                            Pass these credentials in your BullMQ worker to authenticate failures
+                            Pass these credentials in your BullMQ worker to authenticate failures to your project
                         </p>
                     </div>
 
@@ -383,12 +387,12 @@ export const AdminSettings: React.FC = () => {
                                 <input
                                     type="text"
                                     readOnly
-                                    value="insp_live_local_development_key"
+                                    value={activeProject?.apiKey || "insp_live_local_development_key"}
                                     className="w-full text-xs font-mono px-3 py-2 rounded-lg border bg-black/10 focus:outline-none text-purple-400 font-bold"
                                     style={{ borderColor: "var(--border)" }}
                                 />
                                 <button
-                                    onClick={() => copyToClipboard("insp_live_local_development_key", "API Key")}
+                                    onClick={() => copyToClipboard(activeProject?.apiKey || "insp_live_local_development_key", "API Key")}
                                     className="px-3 py-2 rounded-lg border text-xs font-mono flex items-center gap-1 shrink-0 hover:opacity-80"
                                     style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
                                 >
@@ -400,14 +404,14 @@ export const AdminSettings: React.FC = () => {
                         <div>
                             <label className="text-xs font-mono font-bold" style={{ color: "var(--text-muted)" }}>Worker Integration Snippet</label>
                             <pre className="p-3.5 rounded-lg border font-mono text-xs leading-relaxed overflow-x-auto mt-1" style={{ backgroundColor: "rgba(0,0,0,0.2)", borderColor: "var(--border)", color: "var(--text)" }}>{`import { Worker } from "bullmq";
-import { wrapJob, inspector } from "@job-inspector/sdk";
+import { wrapJob, inspector } from "@morpheus.live/sdk";
 
 const worker = new Worker("invoices", wrapJob(async (job) => {
   // Outgoing fetch calls are auto-intercepted!
   await fetch("https://api.stripe.com/v1/charges");
 }, {
   ingestionUrl: "${window.location.origin}/v1/events/failure",
-  apiKey: "insp_live_local_development_key"
+  apiKey: "${activeProject?.apiKey || "insp_live_your_project_key"}"
 }));`}</pre>
                         </div>
                     </div>

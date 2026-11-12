@@ -58,10 +58,13 @@ export async function fetchJobDetail(id: string): Promise<JobDetailResponse> {
 }
 
 export async function fetchSystemHealth(): Promise<SystemHealthResponse> {
-    const res = await fetch("/v1/system/health");
+    const res = await fetch("/v1/system/health", {
+        headers: getAuthHeaders(), // <── Passes Tonny's JWT token!
+    });
     if (!res.ok) throw new Error("Failed to fetch system health");
     return res.json();
 }
+
 
 export async function triggerRetentionSweep(): Promise<{ success: boolean; result: any }> {
     const res = await fetch("/v1/system/retention-sweep", { method: "POST" });
@@ -82,9 +85,10 @@ export async function sendTestWebhook(webhookUrl?: string): Promise<{ success: b
     }
     return res.json();
 }
-
 export async function fetchSystemDiagnostics(): Promise<any> {
-    const res = await fetch("/v1/system/diagnostics");
+    const res = await fetch("/v1/system/diagnostics", {
+        headers: getAuthHeaders(), // <── Passes Tonny's JWT token!
+    });
     if (!res.ok) throw new Error("Failed to fetch diagnostics");
     return res.json();
 }

@@ -323,6 +323,9 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
     //  GET /v1/system/health (Per-Queue Stats & 3-Tier Storage Breakdown)
     fastify.get("/v1/system/health", async (request, reply) => {
+        const project = await resolveProject(request, fastify);
+        const projectFilter = project ? { projectId: project.id } : { projectId: null };
+
         const now = Date.now();
         const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
         const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
@@ -331,22 +334,29 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
         const [queues, totalJobs, hotCount, warmCount, hourlyBuckets] = await Promise.all([
             prisma.job.groupBy({
                 by: ["queueName"],
+                where: projectFilter,  
                 _count: { id: true },
             }),
-            prisma.job.count(),
+            prisma.job.count({ where: projectFilter }),  
             prisma.jobAttempts.count({
-                where: { failedAt: { gte: sevenDaysAgo } },
+                where: {
+                    failedAt: { gte: sevenDaysAgo },
+                    job: projectFilter, 
+                },
             }),
             prisma.jobAttempts.count({
                 where: {
                     failedAt: { lt: sevenDaysAgo, gte: thirtyDaysAgo },
                     payload: { equals: Prisma.DbNull },
+                    job: projectFilter, // <── Isolated to tenant!
                 },
             }),
             prisma.$queryRaw<Array<{ hour: string; count: bigint }>>`
-                SELECT to_char(date_trunc('hour', failed_at), 'HH24:00') as hour, count(*)::int as count
-                FROM job_attempts
-                WHERE failed_at >= ${twentyFourHoursAgo}
+                SELECT to_char(date_trunc('hour', a.failed_at), 'HH24:00') as hour, count(*)::int as count
+                FROM job_attempts a
+                JOIN jobs j ON a.job_id = j.id
+                WHERE a.failed_at >= ${twentyFourHoursAgo}
+                  AND (${project?.id || null}::text IS NULL AND j.project_id IS NULL OR j.project_id = ${project?.id || null})
                 GROUP BY 1
                 ORDER BY 1 ASC
             `,
@@ -439,13 +449,20 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
     //  GET /v1/system/diagnostics (Live Memory, DB Ping, & Architecture Health)
     fastify.get("/v1/system/diagnostics", async (request, reply) => {
+        const project = await resolveProject(request, fastify);
         const mem = process.memoryUsage();
+        
         let dbLatencyMs: number | null = null;
         let dbStatus = "HEALTHY";
         let queueGroups: any[] = [];
         let openIncidents: any[] = [];
         let pendingAlerts = 0;
         let deadAlerts = 0;
+
+        // Strict Tenant Scoping:
+        // If logged in -> show that project's queues!
+        // If unauthenticated guest -> show Public Sandbox queues (projectId: null)!
+        const projectFilter = project ? { projectId: project.id } : { projectId: null };
 
         try {
             const startDb = Date.now();
@@ -455,14 +472,28 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
             [queueGroups, openIncidents, pendingAlerts, deadAlerts] = await Promise.all([
                 prisma.job.groupBy({
                     by: ["queueName"],
+                    where: projectFilter, // <── Isolated to tenant!
                     _count: { id: true },
                 }),
                 prisma.incident.findMany({
-                    where: { status: "OPEN" },
+                    where: {
+                        status: "OPEN",
+                        ...projectFilter, // <── Isolated to tenant!
+                    },
                     select: { queueName: true, lastAlertKind: true },
                 }),
-                prisma.alertDelivery.count({ where: { status: "PENDING" } }),
-                prisma.alertDelivery.count({ where: { status: "DEAD" } }),
+                prisma.alertDelivery.count({
+                    where: {
+                        status: "PENDING",
+                        ...(project ? { incident: { projectId: project.id } } : {}),
+                    },
+                }),
+                prisma.alertDelivery.count({
+                    where: {
+                        status: "DEAD",
+                        ...(project ? { incident: { projectId: project.id } } : {}),
+                    },
+                }),
             ]);
         } catch (dbErr) {
             dbStatus = "DEGRADED";
@@ -471,6 +502,7 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
 
         const openQueueSet = new Set(openIncidents.map((i) => i.queueName));
 
+        // Format dynamic queue nodes
         const queuesTopology = queueGroups.map((q) => {
             const hasIncident = openQueueSet.has(q.queueName);
             return {
@@ -479,14 +511,6 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                 status: hasIncident ? "DEGRADED" : "HEALTHY",
             };
         });
-
-        if (queuesTopology.length === 0) {
-            queuesTopology.push({
-                name: "invoice",
-                failuresCount: 0,
-                status: "HEALTHY",
-            });
-        }
 
         return reply.send({
             server: {
@@ -509,8 +533,10 @@ export const inspectorRoutes: FastifyPluginAsync = async (fastify) => {
                 deadCount: deadAlerts,
             },
             webhook: {
-                isConfigured: Boolean(process.env.WEBHOOK_URL),
-                host: process.env.WEBHOOK_URL ? new URL(process.env.WEBHOOK_URL).hostname : null,
+                isConfigured: Boolean(project?.webhookUrl || process.env.WEBHOOK_URL),
+                host: (project?.webhookUrl || process.env.WEBHOOK_URL)
+                    ? new URL(project?.webhookUrl || process.env.WEBHOOK_URL!).hostname
+                    : null,
             },
             topology: {
                 queues: queuesTopology,
